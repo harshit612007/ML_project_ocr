@@ -751,3 +751,10 @@ If you use this codebase or benchmark methodology in your academic work, please 
 
 ---
 *Built with strictly classical machine learning principles. No deep learning, no GPUs, 100% reproducible.*
+
+---
+
+## 🤝 Contributing
+
+> **Note for Contributors:** If you are a contributor, please create a pull request (PR) rather than pushing directly into the `main` branch. All contributions adhering to the classical machine learning (strictly no deep learning) guidelines are warmly welcomed!
+
