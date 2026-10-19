@@ -1,0 +1,6 @@
+True_Class,True_Glyph,Predicted_Class,Predicted_Glyph,Misclassified_Count,Error_Rate_Pct,Paleographic_Reason
+01_a,அ,02_aa,ஆ,5,50.0,Shared initial loop; rightward sweeping tail erosion or fiber confusion
+05_cha,ச,04_ka,க,4,40.0,Similar curved stroke geometry and palm-leaf fiber degradation
+02_aa,ஆ,01_a,அ,3,30.0,Downward sweeping tail of 'ஆ' faded along leaf fiber grain
+04_ka,க,05_cha,ச,3,30.0,Central stem with loop vs curved bottom stroke ambiguity
+04_ka,க,06_ta,த,2,20.0,Similar curved stroke geometry and palm-leaf fiber degradation
