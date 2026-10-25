@@ -112,7 +112,10 @@ def run_pipeline(
 
             print("\n[STAGE 4/4 - MODEL 1] Evaluating MABPN-BCV on Held-Out Test Set...")
             y_pred = clf.predict(X_te_feat)
-            metrics = evaluate.compute_paper_metrics(y_test, y_pred, class_names)
+            raw_bits = clf.predict_bits(X_te_feat)
+            metrics = evaluate.compute_paper_metrics(
+                y_test, y_pred, class_names, model=clf, raw_outputs=raw_bits
+            )
             final_err = clf.loss_history_[-1] if clf.loss_history_ else 0.0
 
             summary = evaluate.format_evaluation_summary(
@@ -160,7 +163,10 @@ def run_pipeline(
 
             print("\n[STAGE 4/4 - MODEL 2] Evaluating MABPN-GLCM on Held-Out Test Set...")
             y_pred = clf.predict(X_te_feat)
-            metrics = evaluate.compute_paper_metrics(y_test, y_pred, class_names)
+            raw_bits = clf.predict_bits(X_te_feat)
+            metrics = evaluate.compute_paper_metrics(
+                y_test, y_pred, class_names, model=clf, raw_outputs=raw_bits
+            )
             final_err = clf.loss_history_[-1] if clf.loss_history_ else 0.0
 
             summary = evaluate.format_evaluation_summary(

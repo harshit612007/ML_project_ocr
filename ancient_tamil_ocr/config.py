@@ -8,7 +8,10 @@ Reference Paper:
   DOI: https://doi.org/10.1145/3406209
 """
 
+import re
 from pathlib import Path
+from typing import Dict, List, Any, Optional
+import numpy as np
 
 # Base Paths
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -30,7 +33,7 @@ CHAR_SIZE = (8, 8)
 IMG_SIZE = (8, 8)
 
 # Preprocessing filters
-DENOISE_MEDIAN_KSIZE = 3      # Median filter for noise reduction (Figure 5)
+DENOISE_MEDIAN_KSIZE = 3         # Median filter for noise reduction (Figure 5)
 ADAPTIVE_THRESH_BLOCK_SIZE = 15  # Adaptive mean thresholding (Figure 6)
 ADAPTIVE_THRESH_C = 4
 
@@ -57,75 +60,134 @@ REPORTED_MINIMIZED_ERROR = 0.0003
 
 # GLCM Settings (Section 3.1.3)
 GLCM_DISTANCES = [1, 2] # Distance 1 and 2
-GLCM_ANGLES = [0, 0.7853981633974483, 1.5707963267948966, 2.356194490192345] # 0, 45, 90, 135 degrees
+GLCM_ANGLES = [0.0, np.pi / 4.0, np.pi / 2.0, 3.0 * np.pi / 4.0] # 0, 45, 90, 135 degrees
 
-# The 18 Meyyezhuthu (Body-Letters / Consonants) Character Classes (Figure 12)
-# Exactly matching Figure 12: 18 classes with their 5-bit binary output codes
-TAMIL_CLASSES_18 = [
-    "01_ka",   # Class 1:  க் / க  -> 00001
-    "02_nga",  # Class 2:  ங் / ங  -> 00010
-    "03_cha",  # Class 3:  ச் / ச  -> 00011
-    "04_gna",  # Class 4:  ஞ் / ஞ  -> 00100
-    "05_ta",   # Class 5:  ட் / ட  -> 00101
-    "06_nna",  # Class 6:  ண் / ண  -> 00110
-    "07_tha",  # Class 7:  த் / த  -> 00111
-    "08_na",   # Class 8:  ந் / ந  -> 01000
-    "09_pa",   # Class 9:  ப் / ப  -> 01001
-    "10_ma",   # Class 10: ம் / ம  -> 01010
-    "11_ya",   # Class 11: ய் / ய  -> 01011
-    "12_ra",   # Class 12: ர் / ர  -> 01100
-    "13_la",   # Class 13: ல் / ல  -> 01101
-    "14_va",   # Class 14: வ் / வ  -> 01110
-    "15_zha",  # Class 15: ழ் / ழ  -> 01111
-    "16_lla",  # Class 16: ள் / ள  -> 10000
-    "17_rra",  # Class 17: ற் / ற  -> 10001
-    "18_nna2", # Class 18: ன் / ன  -> 10010
-]
+# =============================================================================
+# EXPLICIT 18 MEYYEZHUTHU CLASS DEFINITIONS & FIGURE 12 FIVE-BIT MAPPING
+# =============================================================================
+# Figure 12 (Page 82:15): Characters with corresponding class labels and outputs
+# The paper strictly classifies the 18 Tamil Consonants (Meyyezhuthu).
+# Unknown labels (e.g., vowels '01_a') must be strictly rejected.
 
-# Exact 5-bit target codeword for each class index (1 to 18) as shown in Figure 12
-CLASS_TO_5BIT = {
-    1:  [0, 0, 0, 0, 1],
-    2:  [0, 0, 0, 1, 0],
-    3:  [0, 0, 0, 1, 1],
-    4:  [0, 0, 1, 0, 0],
-    5:  [0, 0, 1, 0, 1],
-    6:  [0, 0, 1, 1, 0],
-    7:  [0, 0, 1, 1, 1],
-    8:  [0, 1, 0, 0, 0],
-    9:  [0, 1, 0, 0, 1],
-    10: [0, 1, 0, 1, 0],
-    11: [0, 1, 0, 1, 1],
-    12: [0, 1, 1, 0, 0],
-    13: [0, 1, 1, 0, 1],
-    14: [0, 1, 1, 1, 0],
-    15: [0, 1, 1, 1, 1],
-    16: [1, 0, 0, 0, 0],
-    17: [1, 0, 0, 0, 1],
-    18: [1, 0, 0, 1, 0],
+FIGURE_12_TABLE = {
+    1:  {"name": "ka",   "glyph": "க", "code": [0, 0, 0, 0, 1]},
+    2:  {"name": "nga",  "glyph": "ங", "code": [0, 0, 0, 1, 0]},
+    3:  {"name": "cha",  "glyph": "ச", "code": [0, 0, 0, 1, 1]},
+    4:  {"name": "gna",  "glyph": "ஞ", "code": [0, 0, 1, 0, 0]},
+    5:  {"name": "ta",   "glyph": "ட", "code": [0, 0, 1, 0, 1]},
+    6:  {"name": "nna",  "glyph": "ண", "code": [0, 0, 1, 1, 0]},
+    7:  {"name": "tha",  "glyph": "த", "code": [0, 0, 1, 1, 1]},
+    8:  {"name": "na",   "glyph": "ந", "code": [0, 1, 0, 0, 0]},
+    9:  {"name": "pa",   "glyph": "ப", "code": [0, 1, 0, 0, 1]},
+    10: {"name": "ma",   "glyph": "ம", "code": [0, 1, 0, 1, 0]},
+    11: {"name": "ya",   "glyph": "ய", "code": [0, 1, 0, 1, 1]},
+    12: {"name": "ra",   "glyph": "ர", "code": [0, 1, 1, 0, 0]},
+    13: {"name": "la",   "glyph": "ல", "code": [0, 1, 1, 0, 1]},
+    14: {"name": "va",   "glyph": "வ", "code": [0, 1, 1, 1, 0]},
+    15: {"name": "zha",  "glyph": "ழ", "code": [0, 1, 1, 1, 1]},
+    16: {"name": "lla",  "glyph": "ள", "code": [1, 0, 0, 0, 0]},
+    17: {"name": "rra",  "glyph": "ற", "code": [1, 0, 0, 0, 1]},
+    18: {"name": "nna2", "glyph": "ன", "code": [1, 0, 0, 1, 0]},
 }
 
-# Unicode Glyph Mapping for the 18 Tamil Consonants
-TAMIL_GLYPH_MAP_18 = {
-    "01_ka": "க",
-    "02_nga": "ங",
-    "03_cha": "ச",
-    "04_gna": "ஞ",
-    "05_ta": "ட",
-    "06_nna": "ண",
-    "07_tha": "த",
-    "08_na": "ந",
-    "09_pa": "ப",
-    "10_ma": "ம",
-    "11_ya": "ய",
-    "12_ra": "ர",
-    "13_la": "ல",
-    "14_va": "வ",
-    "15_zha": "ழ",
-    "16_lla": "ள",
-    "17_rra": "ற",
-    "18_nna2": "ன",
+# Ordered canonical class names
+TAMIL_CLASSES_18 = [f"{cls_num:02d}_{info['name']}" for cls_num, info in FIGURE_12_TABLE.items()]
+
+# Exact 5-bit target codeword for each class index (1 to 18)
+CLASS_TO_5BIT: Dict[int, List[int]] = {
+    cls_num: info["code"] for cls_num, info in FIGURE_12_TABLE.items()
 }
 
-# Aliases for backwards compatibility
-BENCHMARK_CLASSES = TAMIL_CLASSES_18
-TAMIL_GLYPH_MAP = TAMIL_GLYPH_MAP_18
+# Mapping from canonical name to 5-bit vector
+NAME_TO_5BIT: Dict[str, np.ndarray] = {
+    info["name"]: np.array(info["code"], dtype=np.float64) for cls_num, info in FIGURE_12_TABLE.items()
+}
+
+# Glyph mapping
+TAMIL_GLYPH_MAP_18: Dict[str, str] = {
+    f"{cls_num:02d}_{info['name']}": info["glyph"] for cls_num, info in FIGURE_12_TABLE.items()
+}
+for cls_num, info in FIGURE_12_TABLE.items():
+    TAMIL_GLYPH_MAP_18[info["name"]] = info["glyph"]
+
+
+def normalize_label(label: Any) -> str:
+    """
+    Normalizes a folder name, label, or class index into its canonical class name (e.g., '01_ka', 1, or 'ka' -> 'ka').
+    Rejects labels that are not part of the 18 Meyyezhuthu classes (e.g., vowels '01_a').
+    """
+    if isinstance(label, (int, np.integer)):
+        if 1 <= int(label) <= 18:
+            return FIGURE_12_TABLE[int(label)]["name"]
+        raise ValueError(f"Class index {label} out of range [1, 18].")
+
+    cleaned = str(label).strip().lower()
+    if cleaned.isdigit():
+        idx = int(cleaned)
+        if 1 <= idx <= 18:
+            return FIGURE_12_TABLE[idx]["name"]
+
+    # Remove leading number prefixes like '01_', '1_', '04_'
+    cleaned = re.sub(r"^\d+_", "", cleaned)
+
+    # Check if cleaned name matches any of the 18 classes
+    for cls_num, info in FIGURE_12_TABLE.items():
+        if cleaned == info["name"] or label == info["glyph"]:
+            return info["name"]
+        # Allow aliases like 'nja' for 'gna' or 'naa' for 'na'
+        if cleaned in ("nja", "nya") and info["name"] == "gna":
+            return "gna"
+        if cleaned == "nna_alveolar" and info["name"] == "nna2":
+            return "nna2"
+
+    raise ValueError(
+        f"Label '{label}' is not one of the 18 reference paper classes in Figure 12.\n"
+        f"Allowed classes: {[info['name'] for info in FIGURE_12_TABLE.values()]}"
+    )
+
+
+def get_5bit_code(label: Any) -> np.ndarray:
+    """
+    Returns the exact 5-bit codeword for a character label or class index (1 to 18).
+    Raises ValueError if label is not in Figure 12.
+    """
+    canonical_name = normalize_label(label)
+    return NAME_TO_5BIT[canonical_name].copy()
+
+
+def decode_5bit_to_canonical(output_vector: np.ndarray) -> str:
+    """
+    Decodes continuous 5-bit network output into the nearest canonical class name
+    using minimum Euclidean distance to the 18 valid codewords in Figure 12.
+    """
+    vec = np.asarray(output_vector, dtype=np.float64).flatten()
+    best_name = "ka"
+    min_dist = float("inf")
+
+    for cls_num, info in FIGURE_12_TABLE.items():
+        codeword = np.array(info["code"], dtype=np.float64)
+        dist = np.sum((vec - codeword) ** 2)
+        if dist < min_dist:
+            min_dist = dist
+            best_name = info["name"]
+
+    return best_name
+
+
+def decode_5bit_to_index(output_vector: np.ndarray) -> int:
+    """
+    Decodes continuous 5-bit network output into the nearest class index (1 to 18)
+    using minimum Euclidean distance to the 18 valid codewords in Figure 12.
+    """
+    vec = np.asarray(output_vector, dtype=np.float64).flatten()
+    best_idx = 1
+    min_dist = float("inf")
+
+    for cls_num, info in FIGURE_12_TABLE.items():
+        codeword = np.array(info["code"], dtype=np.float64)
+        dist = np.sum((vec - codeword) ** 2)
+        if dist < min_dist:
+            min_dist = dist
+            best_idx = cls_num
+
+    return best_idx

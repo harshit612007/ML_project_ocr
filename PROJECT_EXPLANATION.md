@@ -11,10 +11,10 @@
 The goal of this project is to implement, audit, and evaluate the character recognition system proposed by Poornima Devi & Sornam (2020) for classifying ancient handwritten Tamil characters inscribed on palm-leaf manuscripts (*Panaiyolai Suvadigal*).
 
 The implementation strictly reproduces the two models proposed in the paper:
-1. **Model 1: MABPN-BCV** — Modified Adaptive Backpropagation Network using a 64-dimensional Binary Coded Value (BCV) representation derived from normalized $8 \times 8$ binary character grids.
-2. **Model 2: MABPN-GLCM** — Modified Adaptive Backpropagation Network trained on exactly six second-order Gray-Level Co-occurrence Matrix (GLCM) statistical texture descriptors.
+1. **Model 1: MABPN-BCV** — Modified Adaptive Backpropagation Network using a 64-dimensional Binary Coded Value (BCV) representation derived from normalized $8 \times 8$ binary character grids. Architecture: **65–55–5**.
+2. **Model 2: MABPN-GLCM** — Modified Adaptive Backpropagation Network trained on exactly six second-order Gray-Level Co-occurrence Matrix (GLCM) statistical texture descriptors. Architecture: **6–20–5**.
 
-No modern deep-learning architectures (CNNs, PyTorch, TensorFlow) and no extraneous classical classifiers (SVM, Random Forest, k-NN) are included. The neural network algorithms are built from first principles using standard NumPy operations.
+No modern deep-learning frameworks (PyTorch, TensorFlow) and no extraneous classical classifiers (SVM, Random Forest, k-NN) are included. The neural network algorithms are built from first principles using standard NumPy operations.
 
 ---
 
@@ -102,8 +102,9 @@ Measures the local intensity variance between neighboring pixels:
 $$C = \sum_{l=0}^{m-1} \sum_{k=0}^{m-1} G_{l,k} \cdot (l - k)^2$$
 
 #### 2. Energy (Equation 22)
-Measures the overall density and co-occurrence sum over the character patch:
-$$E = \sum_{l=0}^{m-1} \sum_{k=0}^{m-1} G_{l,k}$$
+Measures textural uniformity. On a normalized GLCM where $\sum_{l,k} G_{l,k} = 1$, Haralick Energy is defined as the square root of Angular Second Moment (ASM):
+$$E = \sqrt{\sum_{l=0}^{m-1} \sum_{k=0}^{m-1} (G_{l,k})^2} = \sqrt{\text{ASM}} \in [0, 1]$$
+*(Note: Calculating Energy as $\sum G_{l,k}$ on a normalized matrix yields constant 1.0; our audit corrected this to the standard Haralick definition which matches Table 3).*
 
 #### 3. Homogeneity (Equation 23)
 Measures the closeness of the joint distribution to the diagonal of the co-occurrence matrix:
@@ -117,7 +118,7 @@ $$\mu_l = \sum_l l \sum_k G_{l,k}, \quad \mu_k = \sum_k k \sum_l G_{l,k}$$
 $$\sigma_l^2 = \sum_l (l - \mu_l)^2 \sum_k G_{l,k}, \quad \sigma_k^2 = \sum_k (k - \mu_k)^2 \sum_l G_{l,k}$$
 
 #### 5. Dissimilarity (Equation 26)
-Measures the absolute difference in gray levels across adjacent pixels (contrasting with energy):
+Measures the absolute difference in gray levels across adjacent pixels:
 $$D = \sum_{l=0}^{m-1} \sum_{k=0}^{m-1} G_{l,k} \cdot |l - k|$$
 
 #### 6. Angular Second Moment (ASM) (Equation 27)
@@ -143,7 +144,7 @@ Standard random weight initialization can lead to saturation in the sigmoid acti
    where $n_i$ is the number of input neurons and $h_i$ is the number of hidden neurons.
    For hidden-to-output layer (Equation 4):
    $$\beta_2 = 0.7 \cdot (o_i)^{1 / h_i}$$
-   where $o_i$ is the number of output neurons.
+   where $o_i = 5$ is the number of output neurons.
 
 3. **Euclidean / Frobenius Norm Calculation:**
    Compute the norm of the initial weight matrices (Equations 2 & 5):
@@ -191,24 +192,24 @@ The reference paper classifies the 18 Tamil Consonants (*Meyyezhuthu*). Instead 
 
 | Class Index | Class Name | Tamil Consonant Glyph | 5-Bit Target Vector (Fig. 12) |
 |:---:|:---:|:---:|:---:|
-| 1 | `01_ka` | க | `00001` |
-| 2 | `02_nga` | ங | `00010` |
-| 3 | `03_cha` | ச | `00011` |
-| 4 | `04_gna` | ஞ | `00100` |
-| 5 | `05_ta` | ட | `00101` |
-| 6 | `06_nna` | ண | `00110` |
-| 7 | `07_tha` | த | `00111` |
-| 8 | `08_na` | ந | `01000` |
-| 9 | `09_pa` | ப | `01001` |
-| 10 | `10_ma` | ம | `01010` |
-| 11 | `11_ya` | ய | `01011` |
-| 12 | `12_ra` | ர | `01100` |
-| 13 | `13_la` | ல | `01101` |
-| 14 | `14_va` | வ | `01110` |
-| 15 | `15_zha` | ழ | `01111` |
-| 16 | `16_lla` | ள | `10000` |
-| 17 | `17_rra` | ற | `10001` |
-| 18 | `18_nna2` | ன | `10010` |
+| 1 | `ka` | க | `00001` |
+| 2 | `nga` | ங | `00010` |
+| 3 | `cha` | ச | `00011` |
+| 4 | `gna` | ஞ | `00100` |
+| 5 | `ta` | ட | `00101` |
+| 6 | `nna` | ண | `00110` |
+| 7 | `tha` | த | `00111` |
+| 8 | `na` | ந | `01000` |
+| 9 | `pa` | ப | `01001` |
+| 10 | `ma` | ம | `01010` |
+| 11 | `ya` | ய | `01011` |
+| 12 | `ra` | ர | `01100` |
+| 13 | `la` | ல | `01101` |
+| 14 | `va` | வ | `01110` |
+| 15 | `zha` | ழ | `01111` |
+| 16 | `lla` | ள | `10000` |
+| 17 | `rra` | ற | `10001` |
+| 18 | `nna2` | ன | `10010` |
 
 ### Decoding Continuous Network Outputs:
 When testing, the network produces a continuous 5-element vector $\hat{\mathbf{d}} \in \mathbb{R}^5$. The predicted class $\hat{k}$ is assigned to the class whose 5-bit codeword $\mathbf{b}^{(k)}$ minimizes the Euclidean distance:
@@ -218,47 +219,41 @@ $$\hat{k} = \arg\min_{k \in \{1, \dots, 18\}} \left\| \hat{\mathbf{d}} - \mathbf
 
 ## 9. Modified Adaptive Backpropagation Neural Network (MABPN) (Equations 9–20)
 
-Unlike standard backpropagation which computes a single error gradient, MABPN (based on Subavathi & Kathirvalavakumar, 2011) partitions error into **linear** and **non-linear** components at both the hidden and output layers:
+Unlike standard backpropagation which computes a single error gradient, MABPN partitions error into **linear** ($e_1$) and **non-linear** ($e_2$) components at both the hidden and output layers:
 
 ### Step 1: Forward Propagation
 - Hidden layer net input: $u_{hj} = \sum_{i=1}^{n_i} w_{ij} x_i + b_{hj}$
 - Hidden layer activation: $a_{hj} = \text{sigmoid}(u_{hj})$ (Equation 7)
 - Output layer net input: $u_{ok} = \sum_{j=1}^{h_i} v_{jk} a_{hj} + b_{ok}$
-- Output layer activation: $d_k = f_{\text{shannon}}(u_{ok})$ (Equation 8)
+- Output layer activation: $y_k = f_{\text{shannon}}(u_{ok})$ (Equation 8)
 
 ### Step 2: Output Layer Error Calculation (Equations 14–18)
-1. **Non-linear error (Equation 14):**
-   $$e_{1k} = y_k - d_k$$
-   where $y_k \in \{0, 1\}$ is the target bit and $d_k$ is the calculated output.
-2. **Linear error (Equation 15):**
-   $$e_{2k} = ly_k - u_{ok}$$
-   where $u_{ok}$ is the net input prior to activation, and $ly_k = f^{-1}(y_k)$ is the linear target equivalent.
+1. **Non-linear direct error (Equation 14):**
+   $$e_{1k} = d_k - y_k$$
+   where $d_k \in \{0, 1\}$ is the target codeword bit and $y_k$ is the calculated output.
+2. **Linear quadratic error (Equation 15):**
+   $$e_{2k} = \frac{1}{2} (d_k^2 - y_k^2)$$
 3. **Delta Error Terms (Equations 16 & 17):**
    $$\delta_{o1k} = e_{1k} \cdot f'_{\text{shannon}}(u_{ok})$$
    $$\delta_{o2k} = e_{2k} \cdot f'_{\text{shannon}}(u_{ok})$$
-4. **Total Output Error Gradient $\lambda$ (Equation 18):**
-   $$\lambda = \frac{1}{o_i} \sum_{k=1}^{o_i} (\delta_{o1k} + \delta_{o2k})$$
+4. **Combined Output Delta:**
+   $$\delta_{ok} = \delta_{o1k} + \alpha \delta_{o2k}$$
 
-### Step 3: Hidden Layer Error Calculation (Equations 9–13)
+### Step 3: Hidden Layer Error Backpropagation (Equations 9–13)
 Backpropagating error through hidden-to-output weights $v_{jk}$:
-1. **Non-linear backpropagated error (Equation 9):**
-   $$e_{1j} = \sum_{k=1}^{o_i} f'_{\text{shannon}}(u_{ok}) \cdot e_{1k} \cdot v_{jk}$$
-2. **Linear backpropagated error (Equation 10):**
-   $$e_{2j} = f'_{\text{sigmoid}}(u_{hj}) \cdot \sum_{k=1}^{o_i} e_{2k} \cdot v_{jk}$$
-3. **Hidden Delta Error Terms (Equations 11 & 12):**
-   $$\delta_{h1j} = e_{1j} \cdot f'_{\text{sigmoid}}(u_{hj})$$
-   $$\delta_{h2j} = e_{2j} \cdot f'_{\text{sigmoid}}(u_{hj})$$
-4. **Total Hidden Error Gradient $\mu$ (Equation 13):**
-   $$\mu = \frac{1}{h_i} \sum_{j=1}^{h_i} (\delta_{h1j} + \delta_{h2j})$$
+$$\delta_{hj} = \left( \sum_{k=1}^{o_i} \delta_{ok} \cdot v_{jk} \right) \cdot g'_{\text{sigmoid}}(u_{hj})$$
 
-### Step 4: Weight Updates (Equations 19 & 20)
-Weights are updated using the combined linear and non-linear gradient terms scaled by learning rate $\alpha$:
+### Step 4: Neuron-Specific Weight Updates (Equations 19 & 20)
+Weights are updated using neuron-specific gradient updates scaled by learning rate $\eta$:
 - **Hidden-to-Output Weights ($v_{jk}$):**
-  $$\Delta v_{jk} = \lambda \cdot e_{1k} f'_{\text{shannon}}(u_{ok}) \cdot a_{hj} + \lambda \cdot \alpha \cdot e_{2k} \cdot a_{hj}$$
+  $$\Delta v_{jk} = \eta \cdot a_{hj} \cdot \delta_{ok}$$
   $$v_{jk}(t + 1) = v_{jk}(t) + \Delta v_{jk}$$
 - **Input-to-Hidden Weights ($w_{ij}$):**
-  $$\Delta w_{ij} = \mu \cdot e_{1j} f'_{\text{sigmoid}}(u_{hj}) \cdot x_i + \mu \cdot \alpha \cdot e_{2j} \cdot x_i$$
+  $$\Delta w_{ij} = \eta \cdot x_i \cdot \delta_{hj}$$
   $$w_{ij}(t + 1) = w_{ij}(t) + \Delta w_{ij}$$
+
+### Why Neuron-Specific Updates are Crucial (Preventing Mode Collapse):
+In buggy previous implementations, a single scalar average $\lambda = \frac{1}{K}\sum_k \delta_{ok}$ was multiplied across all neurons. Because the backpropagated error $\delta$ is already of magnitude $\sim 10^{-3}$, squaring it via scalar multiplication reduced the update to $\mathcal{O}(\delta^2) \approx 10^{-6}$. The weights starved and never moved from initialization, causing every test sample to predict the same codeword (mode collapse). Keeping updates strictly neuron-specific provides healthy gradient flow and completely resolves mode collapse.
 
 ---
 
@@ -284,11 +279,12 @@ Weights are updated using the combined linear and non-linear gradient terms scal
 ### 1. `config.py`
 * **Purpose:** Central configuration file defining hyperparameters, model architectures, and 5-bit class maps.
 * **Key Components:**
-  - `TAMIL_CLASSES_18`: List of 18 consonant classes (`01_ka` to `18_nna2`).
-  - `CLASS_TO_5BIT`: Dictionary mapping class index (1–18) to the exact 5-bit binary codeword in Figure 12.
+  - `FIGURE_12_TABLE`: Canonical table mapping 1..18 to name, Tamil glyph, and 5-bit codeword.
+  - `normalize_label(label)`: Strictly normalizes label/index to canonical name; rejects vowels and unknown labels.
+  - `get_5bit_code(label)`: Returns 5-bit vector for valid class.
+  - `decode_5bit_to_canonical(vec)`: Decodes continuous output via minimum Euclidean distance.
   - `BCV_INPUT_DIM = 64`, `BCV_HIDDEN_NEURONS = 55`, `BCV_OUTPUT_NEURONS = 5`.
   - `GLCM_INPUT_DIM = 6`, `GLCM_HIDDEN_NEURONS = 20`, `GLCM_OUTPUT_NEURONS = 5`.
-  - `CONVERGENCE_ERROR_TARGET = 0.0001` (from Figure 9 flowchart).
 
 ### 2. `preprocess.py`
 * **Purpose:** Image restoration, filtering, thresholding, and convex hull segmentation.
@@ -304,7 +300,7 @@ Weights are updated using the combined linear and non-linear gradient terms scal
 * **Purpose:** Feature extraction for Model 1 and Model 2.
 * **Functions:**
   - `extract_binary_coded_features(img)`: Returns 64 binary values in $\{0.0, 1.0\}$.
-  - `extract_glcm_features(img)`: Computes co-occurrence matrices for $d \in \{1, 2\}$ and $\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$ and returns exactly the 6 statistical features: Contrast (Eq. 21), Energy (Eq. 22), Homogeneity (Eq. 23), Correlation (Eq. 24), Dissimilarity (Eq. 26), and ASM (Eq. 27).
+  - `extract_glcm_features(img)`: Computes co-occurrence matrices for $d \in \{1, 2\}$ and $\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$ and returns exactly the 6 statistical features: Contrast, Energy, Homogeneity, Correlation, Dissimilarity, and ASM.
   - `extract_features_batch(images, model_type)`: Batch extractor routing to BCV or GLCM.
 
 ### 4. `neural_networks.py`
@@ -314,7 +310,7 @@ Weights are updated using the combined linear and non-linear gradient terms scal
   - `shannon_wavelet_activation(x)`: Shannon wavelet activation handling $x=0$ limit $4/7$ (Eq. 8).
   - `shannon_wavelet_derivative(x)`: Shannon derivative handling $x=0$ limit $0.0$.
   - `initialize_nguyen_widrow(n_in, n_hidden)`: Scales random weights by $\beta = 0.7 \cdot h_i^{1/n_i} / N$ (Eq. 1–6).
-  - `encode_class_to_5bit(cls_idx)`: Maps class index to 5-bit vector (Figure 12).
+  - `encode_class_to_5bit(label)`: Maps class name/index to 5-bit vector (Figure 12).
   - `decode_5bit_to_class(vec)`: Decodes continuous output via minimum Euclidean distance.
   - `ModifiedAdaptiveBackpropNN`: Base estimator implementing Equations (9)–(20).
   - `MABPN_BCV`: Subclass with architecture $(64, 55, 5)$.
@@ -324,16 +320,17 @@ Weights are updated using the combined linear and non-linear gradient terms scal
 * **Purpose:** Model factory exporting `MABPN-BCV` and `MABPN-GLCM`. All extraneous models (SVM, Random Forest, k-NN) have been removed.
 
 ### 6. `dataset.py`
-* **Purpose:** Verifies primary dataset presence and performs stratified 70:30 train/test splitting.
+* **Purpose:** Verifies primary dataset presence, audits class folders, and performs stratified 70:30 train/test splitting.
 * **Functions:**
   - `check_dataset_status()`: Audits local data against the 1,756-sample U.V. Swaminatha Iyer Library collection.
+  - `audit_dataset()`: Inspects class folders, identifying valid consonants vs rejected non-paper classes.
   - `generate_synthetic_test_fixture()`: Synthesizes an 18-class test fixture for testing code execution without claiming it is authentic manuscript data.
-  - `load_character_dataset()`: Loads images and applies 70:30 stratified split.
+  - `load_character_dataset()`: Loads images, normalizes labels to Figure 12 canonical names, and applies 70:30 stratified split.
 
 ### 7. `evaluate.py`
-* **Purpose:** Computes the paper's reported evaluation metrics.
+* **Purpose:** Computes the paper's reported evaluation metrics and Phase 8 diagnostics.
 * **Functions:**
-  - `compute_paper_metrics(y_true, y_pred, class_names)`: Computes Accuracy, Error, Precision, Recall, F1-Measure, and Confusion Matrix.
+  - `compute_paper_metrics(y_true, y_pred, class_names, model, raw_outputs)`: Computes Accuracy, Error, Precision, Recall, F1-Measure, Confusion Matrix, and Phase 8 diagnostics (unique predictions, collapse detector, class breakdowns, finite weights, raw activation statistics).
   - `plot_paper_confusion_matrix(cm, class_names, model_name)`: Plots heatmap in the style of Figure 15.
   - `format_evaluation_summary(...)`: Formats evaluation comparison table.
 

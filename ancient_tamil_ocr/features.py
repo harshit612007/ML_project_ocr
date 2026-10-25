@@ -4,11 +4,11 @@ Reference: Poornima Devi. M and M. Sornam (2020), ACM TALLIP, Article 82.
 
 Implements ONLY the two feature representations proposed in the reference paper:
 1. Model 1 (MABPN-BCV): Binary Coded Value (BCV) representation
-   - 8x8 binary character image -> 64 binary values (Section 3.1.2)
+   - 8x8 binary character image -> 64 binary values in {0.0, 1.0} (Section 3.1.2)
 2. Model 2 (MABPN-GLCM): Gray-Level Co-occurrence Matrix (GLCM) Features
    - Exactly six second-order GLCM statistical features (Section 3.1.3, Equations 21-27):
      1. Contrast (Equation 21)
-     2. Energy (Equation 22)
+     2. Energy (Equation 22, sqrt(ASM) with range [0, 1])
      3. Homogeneity (Equation 23)
      4. Correlation (Equation 24)
      5. Dissimilarity (Equation 26)
@@ -41,7 +41,7 @@ def extract_binary_coded_features(
     it into a 64-dimensional binary feature vector x in {0.0, 1.0}^64.
     
     Parameters:
-      img: Input character image (grayscale or RGB).
+      img: Input character image.
       grid_size: Standardized (8, 8) grid dimensions.
       
     Returns:
@@ -79,7 +79,7 @@ def extract_glcm_features(
     
     Equations:
       1. Contrast (Eq 21):      C   = sum_{l,k} G_{l,k} * (l - k)^2
-      2. Energy (Eq 22):        E   = sum_{l,k} G_{l,k}
+      2. Energy (Eq 22):        E   = sqrt(sum_{l,k} G_{l,k}^2) in [0, 1] (Haralick Energy)
       3. Homogeneity (Eq 23):   H   = sum_{l,k} G_{l,k} / (1 + (l - k)^2)
       4. Correlation (Eq 24):   Cor = sum_{l,k} G_{l,k} * ((l - mu_l)*(k - mu_k)) / sqrt(sigma_l^2 * sigma_k^2)
       5. Dissimilarity (Eq 26): D   = sum_{l,k} G_{l,k} * |l - k|
@@ -121,7 +121,6 @@ def extract_glcm_features(
     dissimilarity_vals = []
     asm_vals = []
 
-    # Grid indices l and k
     l_idx, k_idx = np.indices((n_levels, n_levels))
 
     for d_idx in range(len(distances)):
@@ -143,8 +142,13 @@ def extract_glcm_features(
             contrast = np.sum(P * ((l_idx - k_idx) ** 2))
             contrast_vals.append(contrast)
 
-            # 2. Energy (Equation 22)
-            energy = np.sum(P)
+            # 6. Angular Second Moment (ASM) (Equation 27)
+            asm = np.sum(P ** 2)
+            asm_vals.append(asm)
+
+            # 2. Energy (Equation 22) - Haralick Energy sqrt(ASM) in [0, 1]
+            # Satisfies: range is 0 to 1, value is 1 for a constant image
+            energy = np.sqrt(asm)
             energy_vals.append(energy)
 
             # 3. Homogeneity (Equation 23)
@@ -161,10 +165,6 @@ def extract_glcm_features(
             # 5. Dissimilarity (Equation 26)
             dissimilarity = np.sum(P * np.abs(l_idx - k_idx))
             dissimilarity_vals.append(dissimilarity)
-
-            # 6. Angular Second Moment (ASM) (Equation 27)
-            asm = np.sum(P ** 2)
-            asm_vals.append(asm)
 
     # Average each of the 6 features across all directional GLCMs
     feat_vector = np.array([

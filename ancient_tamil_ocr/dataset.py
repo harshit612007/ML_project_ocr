@@ -138,14 +138,56 @@ def generate_synthetic_test_fixture(
     return output_dir
 
 
+def audit_dataset(data_dir: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """
+    Audits every class folder in data_dir against the 18 reference classes in Figure 12.
+    Detects valid Meyyezhuthu consonants vs rejected unknown/vowel classes.
+    """
+    if data_dir is None:
+        data_dir = config.DATA_DIR
+    data_dir = Path(data_dir)
+
+    all_subdirs = [d for d in data_dir.iterdir() if d.is_dir()] if data_dir.exists() else []
+    valid_classes = []
+    rejected_classes = []
+    class_details = {}
+
+    for d in all_subdirs:
+        if d.name == "18_classes_test_fixture":
+            continue
+        try:
+            canonical = config.normalize_label(d.name)
+            valid_classes.append(d.name)
+            class_details[d.name] = {
+                "canonical": canonical,
+                "status": "VALID_FIGURE_12_CONSONANT",
+                "code": config.get_5bit_code(canonical).tolist()
+            }
+        except ValueError as err:
+            rejected_classes.append(d.name)
+            class_details[d.name] = {
+                "canonical": None,
+                "status": "REJECTED_NON_FIGURE_12",
+                "reason": str(err)
+            }
+
+    status = check_dataset_status(data_dir)
+    status["valid_classes"] = valid_classes
+    status["rejected_classes"] = rejected_classes
+    status["class_details"] = class_details
+    return status
+
+
 def load_character_dataset(
     data_dir: Optional[Union[str, Path]] = None,
     test_size: float = config.TRAIN_TEST_SPLIT_RATIO,
     random_state: int = config.RANDOM_SEED,
-    allow_test_fixture: bool = True
+    allow_test_fixture: bool = True,
+    strict_figure12: bool = True
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str], Dict[str, Any]]:
     """
     Loads character images for Model 1 (MABPN-BCV) and Model 2 (MABPN-GLCM).
+    Strictly verifies class labels against the 18 Meyyezhuthu classes in Figure 12.
     
     Returns:
       X_train_raw: Training character images (shape: N_train x 8 x 8)
@@ -160,6 +202,7 @@ def load_character_dataset(
     data_dir = Path(data_dir)
 
     status = check_dataset_status(data_dir)
+    target_dir = data_dir
 
     if not status["is_authentic_primary_dataset"]:
         print("\n" + "=" * 76)
@@ -171,27 +214,50 @@ def load_character_dataset(
         print(" is a physical archival collection that was NOT released online by the authors.")
         print(f" Current repository folder '{data_dir.resolve()}' does not contain the 1,756 manuscript files.")
         if allow_test_fixture:
-            print(" >> Using 18-class test fixture solely to verify mathematical correctness and pipeline execution.")
+            print(" >> Using the controlled 18-class test fixture (Figure 12) for pipeline & math verification.")
             print(" >> NOTE: Results on test fixture will NOT match the paper's reported 96.23% manuscript accuracy.")
         print("=" * 76 + "\n")
 
-    subdirs = [d for d in data_dir.iterdir() if d.is_dir()] if data_dir.exists() else []
+        # If data_dir has the legacy 10-folder dataset (which contains vowels '01_a', etc.)
+        # and allow_test_fixture is True, switch to the 18-class test fixture
+        fixture_dir = data_dir / "18_classes_test_fixture"
+        if allow_test_fixture:
+            if not fixture_dir.exists() or len([d for d in fixture_dir.iterdir() if d.is_dir()]) < 18:
+                generate_synthetic_test_fixture(fixture_dir, samples_per_class=30, random_seed=random_state)
+            target_dir = fixture_dir
 
-    # If no directories or fewer than 2 classes, initialize 18-class test fixture
-    if len(subdirs) < 2 and allow_test_fixture:
-        test_fixture_dir = data_dir / "18_classes_test_fixture"
-        generate_synthetic_test_fixture(test_fixture_dir, samples_per_class=30, random_seed=random_state)
-        subdirs = [d for d in test_fixture_dir.iterdir() if d.is_dir()]
-        data_dir = test_fixture_dir
+    subdirs = [d for d in target_dir.iterdir() if d.is_dir() and d.name != "18_classes_test_fixture"]
 
-    class_names = sorted([d.name for d in subdirs])
+    # Filter and validate classes
+    valid_subdirs = []
+    for d in subdirs:
+        try:
+            config.normalize_label(d.name)
+            valid_subdirs.append(d)
+        except ValueError as err:
+            if strict_figure12:
+                logger.warning(f"Rejecting unknown class folder '{d.name}': {err}")
+            else:
+                valid_subdirs.append(d)
+
+    if len(valid_subdirs) == 0:
+        raise FileNotFoundError(f"No valid Figure 12 character classes found in '{target_dir}'.")
+
+    ordered_figure12_names = [info["name"] for info in config.FIGURE_12_TABLE.values()]
+    subdirs_by_canonical = {}
+    for d in valid_subdirs:
+        c_name = config.normalize_label(d.name)
+        subdirs_by_canonical[c_name] = d
+
+    # Order class_names according to Figure 12 table
+    class_names = [c for c in ordered_figure12_names if c in subdirs_by_canonical]
 
     images = []
     labels = []
     valid_exts = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
 
-    for cls_idx, cls_name in enumerate(class_names):
-        cls_path = data_dir / cls_name
+    for cls_name in class_names:
+        cls_path = subdirs_by_canonical[cls_name]
         files = [p for p in cls_path.iterdir() if p.suffix.lower() in valid_exts]
         for f in files:
             img = cv2.imread(str(f), cv2.IMREAD_GRAYSCALE)
@@ -202,7 +268,7 @@ def load_character_dataset(
                 labels.append(cls_name)
 
     if len(images) == 0:
-        raise FileNotFoundError(f"No valid character images found in '{data_dir}'.")
+        raise FileNotFoundError(f"No valid character images found in '{target_dir}'.")
 
     X = np.array(images, dtype=np.uint8)
     y = np.array(labels)
@@ -216,7 +282,12 @@ def load_character_dataset(
         random_state=random_state
     )
 
-    logger.info(f"Loaded dataset: {len(X)} samples across {len(class_names)} classes.")
+    logger.info(f"Loaded dataset from: {target_dir.name}")
+    logger.info(f"Total samples: {len(X)} across {len(class_names)} canonical classes.")
     logger.info(f"Stratified Split (70:30): {len(X_train)} Train, {len(X_test)} Test.")
+
+    status["loaded_from"] = str(target_dir)
+    status["num_classes_loaded"] = len(class_names)
+    status["total_images_loaded"] = len(X)
 
     return X_train, X_test, y_train, y_test, class_names, status

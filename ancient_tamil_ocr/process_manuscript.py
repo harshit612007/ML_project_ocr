@@ -58,7 +58,6 @@ def process_manuscript_strip(
     if not leaf_p.exists():
         raise FileNotFoundError(f"Manuscript image not found: {leaf_p}")
 
-    out_p = Path(output_dir)
     out_p.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "=" * 76)
