@@ -1,415 +1,451 @@
 """
-Neural Network Implementations for Ancient Tamil Palm-Leaf Manuscript Recognition.
+Modified Adaptive Backpropagation Network (MABPN) for Ancient Tamil Palm-Leaf Character Recognition.
+Reference: Poornima Devi. M and M. Sornam (2020), "Classification of Ancient Handwritten
+Tamil Characters on Palm Leaf Inscription Using Modified Adaptive Backpropagation Neural
+Network with GLCM Features", ACM Transactions on Asian and Low-Resource Language
+Information Processing, Vol. 19, Iss. 6, Article 82.
+DOI: https://doi.org/10.1145/3406209
 
-Directly implements the neural architectures from the two reference papers:
-1. Paper 1 (Ramya & Parvathavarthini, 2014):
-   Feed Forward Back Propagation Neural Network (FFBNN)
-   - Standard random weight initialization
-   - Sigmoid activation function
-   - Standard backpropagation with momentum and fixed learning rate
-
-2. Paper 2 (Poornima Devi & Sornam, 2020):
-   Modified Adaptive Backpropagation Network (MABPN)
-   - Nguyen-Widrow weight initialization algorithm
-   - Shannon activation function f(x) = sin(x) - sin(sin(x))
-   - Adaptive learning rate mechanism (updates eta dynamically based on error trend)
+Strictly implements:
+1. Nguyen-Widrow Weight Initialization (Equations 1-6)
+2. Sigmoid Activation for Input-to-Hidden Layer (Equation 7)
+3. Shannon Wavelet Activation for Hidden-to-Output Layer (Equation 8)
+4. Modified Adaptive Backpropagation with Linear and Non-linear Errors (Equations 9-20)
+5. 5-bit Output Class Encoding and Nearest-Codeword Decoding (Figure 12)
+6. Model 1 (MABPN-BCV): Architecture (65-55-5)
+7. Model 2 (MABPN-GLCM): Architecture (6-20-5)
 """
 
-from typing import Tuple, List, Optional, Union
+from typing import Tuple, List, Optional, Dict, Union
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.preprocessing import LabelBinarizer
+
+import config
 
 
 # =============================================================================
-# Activation Functions & Derivatives
+# 1. ACTIVATION FUNCTIONS & DERIVATIVES (EQUATIONS 7 & 8)
 # =============================================================================
 
-def sigmoid(z: np.ndarray) -> np.ndarray:
-    """Numerically stable standard logistic sigmoid activation."""
-    z_clipped = np.clip(z, -50.0, 50.0)
-    return 1.0 / (1.0 + np.exp(-z_clipped))
-
-
-def sigmoid_derivative(a: np.ndarray) -> np.ndarray:
-    """Derivative of sigmoid given activation output a = sigmoid(z)."""
-    return a * (1.0 - a)
-
-
-def shannon_activation(z: np.ndarray) -> np.ndarray:
+def sigmoid(x: np.ndarray) -> np.ndarray:
     """
-    Shannon activation function as formulated in Poornima Devi & Sornam (2020):
-      f(x) = sin(x) - sin(sin(x))
-    Produces an oscillating, bounded non-monotonic response that effectively
-    discriminates multi-frequency texture features from ancient manuscripts.
+    Sigmoid activation function for input-to-hidden layer (Equation 7, Page 82:9):
+      f(h_j) = 1 / (1 + exp(-h_j))
     """
-    return np.sin(z) - np.sin(np.sin(z))
+    x_clip = np.clip(x, -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-x_clip))
 
 
-def shannon_derivative(z: np.ndarray) -> np.ndarray:
+def sigmoid_derivative(f_x: np.ndarray) -> np.ndarray:
     """
-    Exact analytical derivative of the Shannon activation function:
-      f'(x) = d/dx [ sin(x) - sin(sin(x)) ]
-            = cos(x) - cos(sin(x)) * cos(x)
-            = cos(x) * [ 1.0 - cos(sin(x)) ]
+    Gradient of sigmoid activation function f'(h_j) = f(h_j) * (1 - f(h_j)).
+    Passed activation output f_x = sigmoid(x).
     """
-    return np.cos(z) * (1.0 - np.cos(np.sin(z)))
+    return f_x * (1.0 - f_x)
 
 
-def softmax(z: np.ndarray) -> np.ndarray:
-    """Numerically stable softmax for multi-class probability outputs."""
-    z_shift = z - np.max(z, axis=1, keepdims=True)
-    exp_z = np.exp(z_shift)
-    return exp_z / np.maximum(1e-12, np.sum(exp_z, axis=1, keepdims=True))
+def shannon_wavelet_activation(x: np.ndarray) -> np.ndarray:
+    """
+    Shannon wavelet activation function for hidden-to-output layer (Equation 8, Page 82:9):
+      f(x) = (sin(1.75 * x) - sin(0.75 * x)) / (1.75 * x)
+      
+    Derived using the inverse Fourier transform in the real domain (Carlo Cattani, 2008).
+    Infinitely differentiable and bounded in the frequency domain.
+    
+    Mathematical limit as x -> 0 (via L'Hopital's rule):
+      lim_{x -> 0} f(x) = (1.75*cos(0) - 0.75*cos(0)) / 1.75 = 1.0 / 1.75 = 4/7 (~0.57142857)
+    """
+    x = np.asarray(x, dtype=np.float64)
+    out = np.empty_like(x)
+    
+    zero_mask = np.abs(x) < 1e-12
+    non_zero = ~zero_mask
+    
+    # Mathematical limit at x = 0
+    out[zero_mask] = 4.0 / 7.0
+    
+    # General case x != 0
+    x_nz = x[non_zero]
+    out[non_zero] = (np.sin(1.75 * x_nz) - np.sin(0.75 * x_nz)) / (1.75 * x_nz)
+    
+    return out
+
+
+def shannon_wavelet_derivative(x: np.ndarray) -> np.ndarray:
+    """
+    Exact analytical derivative of the Shannon wavelet activation function f'(x):
+      f'(x) = d/dx [ (sin(1.75 * x) - sin(0.75 * x)) / (1.75 * x) ]
+            = (1.75 * cos(1.75 * x) - 0.75 * cos(0.75 * x)) / (1.75 * x)
+              - (sin(1.75 * x) - sin(0.75 * x)) / (1.75 * x^2)
+              
+    Mathematical limit as x -> 0:
+      Since f(x) is an even function (f(-x) = f(x)), its derivative f'(x) is an odd function.
+      lim_{x -> 0} f'(x) = 0.0.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    out = np.empty_like(x)
+    
+    zero_mask = np.abs(x) < 1e-12
+    non_zero = ~zero_mask
+    
+    # Mathematical limit at x = 0
+    out[zero_mask] = 0.0
+    
+    # General case x != 0
+    x_nz = x[non_zero]
+    denom1 = 1.75 * x_nz
+    denom2 = 1.75 * (x_nz ** 2)
+    
+    term1 = (1.75 * np.cos(1.75 * x_nz) - 0.75 * np.cos(0.75 * x_nz)) / denom1
+    term2 = (np.sin(1.75 * x_nz) - np.sin(0.75 * x_nz)) / denom2
+    out[non_zero] = term1 - term2
+    
+    return out
+
+
+def inverse_shannon_target(y: np.ndarray) -> np.ndarray:
+    """
+    Computes linear target equivalent ly_i = f^{-1}(y_i) for Equation (15).
+    For binary target bits y_i in {0, 1}:
+      - When y_i = 1: maps to x = 0.0 (where f(0) = 4/7 is the peak activation of Shannon wavelet).
+      - When y_i = 0: maps to the fundamental root of f(x) = 0, which occurs when
+        sin(1.75 * x) = sin(0.75 * x) => x = pi / 2.5 = 0.4 * pi (~1.256637).
+    """
+    y = np.asarray(y, dtype=np.float64)
+    # Binary mapping: 1 -> 0.0 (maximum), 0 -> 0.4 * pi (root)
+    root = 0.4 * np.pi
+    return np.where(y > 0.5, 0.0, root)
 
 
 # =============================================================================
-# Weight Initialization Algorithms
+# 2. NGUYEN-WIDROW WEIGHT INITIALIZATION (EQUATIONS 1-6)
 # =============================================================================
-
-def initialize_random_weights(
-    n_in: int,
-    n_out: int,
-    rng: np.random.Generator,
-    scale: float = 0.5
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Standard random weight initialization (Paper 1 - Ramya & Parvathavarthini, 2014):
-      Weights uniformly distributed in [-scale, +scale].
-      Biases initialized to zeros or small uniform values.
-    """
-    W = rng.uniform(-scale, scale, (n_in, n_out)).astype(np.float64)
-    b = rng.uniform(-0.1, 0.1, (1, n_out)).astype(np.float64)
-    return W, b
-
 
 def initialize_nguyen_widrow(
     n_in: int,
     n_hidden: int,
-    rng: np.random.Generator
+    rng: Optional[np.random.Generator] = None
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Nguyen-Widrow weight initialization algorithm (Paper 2 - Poornima Devi & Sornam, 2020):
-    Distributes the active regions of hidden layer neurons uniformly across the input space.
+    Nguyen-Widrow weight initialization algorithm (Equations 1-6, Page 82:8).
     
     Steps:
-      1. Initialize weights w_ij uniformly in [-0.5, 0.5].
-      2. For each hidden neuron j, calculate Euclidean norm: ||w_j|| = sqrt(sum_i w_ij^2).
-      3. Compute scaling factor beta = 0.7 * (n_hidden)^(1 / n_in).
-      4. Re-scale weights: w_ij = beta * w_ij / ||w_j||.
-      5. Initialize biases b_j uniformly in [-beta, beta].
+      1. Initialize weights w_{ij} with uniform random numbers in (-0.5, +0.5).
+      2. Calculate scaling factor beta = 0.7 * (n_hidden)^(1 / n_in) (Eq 1).
+      3. Compute Euclidean norm N = sqrt(sum_{i=1}^{n_in} sum_{j=1}^{n_hidden} w_{ij}^2) (Eq 2).
+      4. Adjust weights: w_{ij} = beta * w_{ij} / N (Eq 3).
+      5. Initialize bias values uniformly in (-beta, +beta) (Step 11).
     """
-    # 1. Random initial weights
+    if rng is None:
+        rng = np.random.default_rng(config.RANDOM_SEED)
+
+    # 1. Random initial weights in (-0.5, +0.5)
     W = rng.uniform(-0.5, 0.5, (n_in, n_hidden)).astype(np.float64)
-    
-    # 2. Euclidean norm per hidden neuron (column-wise)
-    norms = np.linalg.norm(W, axis=0, keepdims=True)
-    norms = np.where(norms == 0, 1e-12, norms)
-    
-    # 3. Scaling factor beta
-    # Safeguard against overflow when n_in is large
-    power = 1.0 / max(1, n_in)
-    beta = 0.7 * (n_hidden ** power)
-    
-    # 4. Scale weights
-    W = beta * (W / norms)
-    
-    # 5. Biases uniformly distributed in [-beta, +beta]
+
+    # 2. Scaling factor beta (Equation 1)
+    beta = 0.7 * (n_hidden ** (1.0 / max(1, n_in)))
+
+    # 3. Norm N over all weights (Equation 2)
+    N = np.sqrt(np.sum(W ** 2))
+    if N < 1e-12:
+        N = 1e-12
+
+    # 4. Adjusted weights (Equation 3)
+    W = beta * (W / N)
+
+    # 5. Bias initialized in (-beta, +beta) (Step 11)
     b = rng.uniform(-beta, beta, (1, n_hidden)).astype(np.float64)
-    
+
     return W, b
 
 
 # =============================================================================
-# Paper 1: Feed Forward Back Propagation Neural Network (FFBNN)
-# Ramya & Parvathavarthini (2014)
+# 3. FIVE-BIT CLASS ENCODING AND DECODING (FIGURE 12)
 # =============================================================================
 
-class FeedForwardBackpropNN(BaseEstimator, ClassifierMixin):
+def encode_class_to_5bit(class_index: int) -> np.ndarray:
     """
-    Feed Forward Back Propagation Neural Network (FFBNN) Classifier.
-    Reference: Ramya & Parvathavarthini (2014), Journal of Computer Science.
-    
-    Features:
-      - 3-Layer Architecture: Input -> Hidden (Sigmoid) -> Output (Softmax/Sigmoid)
-      - Standard random weight initialization [-0.5, 0.5]
-      - Gradient descent backpropagation with momentum
-      - Cross-entropy / MSE loss tracking
+    Encodes 1-based character class label (1 to 18) into the paper's 5-bit vector (Figure 12).
     """
+    if class_index in config.CLASS_TO_5BIT:
+        return np.array(config.CLASS_TO_5BIT[class_index], dtype=np.float64)
+    # Default binary representation
+    bits = [int(b) for b in f"{class_index:05b}"]
+    return np.array(bits[-5:], dtype=np.float64)
 
-    def __init__(
-        self,
-        hidden_layer_sizes: Tuple[int, ...] = (64,),
-        learning_rate: float = 0.05,
-        momentum: float = 0.8,
-        max_iter: int = 400,
-        tol: float = 1e-4,
-        random_state: int = 42
-    ):
-        self.hidden_layer_sizes = hidden_layer_sizes
-        self.learning_rate = learning_rate
-        self.momentum = momentum
-        self.max_iter = max_iter
-        self.tol = tol
-        self.random_state = random_state
 
-        # Internal state
-        self.W1: Optional[np.ndarray] = None
-        self.b1: Optional[np.ndarray] = None
-        self.W2: Optional[np.ndarray] = None
-        self.b2: Optional[np.ndarray] = None
-        self.label_binarizer: Optional[LabelBinarizer] = None
-        self.classes_: Optional[np.ndarray] = None
-        self.loss_history_: List[float] = []
+def decode_5bit_to_class(output_vector: np.ndarray) -> int:
+    """
+    Decodes continuous 5-bit network output into the nearest class label (1 to 18)
+    using minimum Euclidean distance to the 18 valid codewords in Figure 12.
+    """
+    output_vector = np.asarray(output_vector, dtype=np.float64).flatten()
+    best_class = 1
+    min_dist = float("inf")
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
-        """Trains the FFBNN on training dataset (X, y)."""
-        rng = np.random.default_rng(self.random_state)
-        X = np.asarray(X, dtype=np.float64)
-        n_samples, n_features = X.shape
+    for cls_idx, code in config.CLASS_TO_5BIT.items():
+        code_arr = np.array(code, dtype=np.float64)
+        dist = np.sum((output_vector - code_arr) ** 2)
+        if dist < min_dist:
+            min_dist = dist
+            best_class = cls_idx
 
-        # Encode labels to one-hot vectors
-        self.label_binarizer = LabelBinarizer()
-        Y_onehot = self.label_binarizer.fit_transform(y)
-        if Y_onehot.shape[1] == 1:
-            Y_onehot = np.hstack([1.0 - Y_onehot, Y_onehot])
-        self.classes_ = self.label_binarizer.classes_
-        n_classes = Y_onehot.shape[1]
-
-        n_hidden = self.hidden_layer_sizes[0]
-
-        # Initialize weights with standard random uniform distribution (Paper 1)
-        self.W1, self.b1 = initialize_random_weights(n_features, n_hidden, rng, scale=0.5)
-        self.W2, self.b2 = initialize_random_weights(n_hidden, n_classes, rng, scale=0.5)
-
-        # Velocity matrices for momentum
-        v_W1 = np.zeros_like(self.W1)
-        v_b1 = np.zeros_like(self.b1)
-        v_W2 = np.zeros_like(self.W2)
-        v_b2 = np.zeros_like(self.b2)
-
-        self.loss_history_ = []
-
-        for epoch in range(self.max_iter):
-            # 1. Forward Propagation
-            # Input -> Hidden
-            z1 = np.dot(X, self.W1) + self.b1
-            a1 = sigmoid(z1)  # Hidden activations
-
-            # Hidden -> Output
-            z2 = np.dot(a1, self.W2) + self.b2
-            a2 = softmax(z2)  # Output probabilities
-
-            # 2. Loss Calculation (Cross-Entropy with epsilon clipping)
-            probs_clip = np.clip(a2, 1e-12, 1.0 - 1e-12)
-            loss = -np.mean(np.sum(Y_onehot * np.log(probs_clip), axis=1))
-            self.loss_history_.append(float(loss))
-
-            # Early stopping check
-            if loss < self.tol:
-                break
-
-            # 3. Backpropagation (Output Layer Error)
-            # Softmax + Cross-Entropy gradient simplifies to: delta2 = a2 - y
-            delta2 = (a2 - Y_onehot) / n_samples
-
-            # Gradients for layer 2
-            grad_W2 = np.dot(a1.T, delta2)
-            grad_b2 = np.sum(delta2, axis=0, keepdims=True)
-
-            # Backpropagation (Hidden Layer Error)
-            delta1 = np.dot(delta2, self.W2.T) * sigmoid_derivative(a1)
-
-            # Gradients for layer 1
-            grad_W1 = np.dot(X.T, delta1)
-            grad_b1 = np.sum(delta1, axis=0, keepdims=True)
-
-            # 4. Weight Updates with Momentum
-            v_W2 = self.momentum * v_W2 - self.learning_rate * grad_W2
-            v_b2 = self.momentum * v_b2 - self.learning_rate * grad_b2
-            v_W1 = self.momentum * v_W1 - self.learning_rate * grad_W1
-            v_b1 = self.momentum * v_b1 - self.learning_rate * grad_b1
-
-            self.W2 += v_W2
-            self.b2 += v_b2
-            self.W1 += v_W1
-            self.b1 += v_b1
-
-        return self
-
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Returns class probabilities for test samples X."""
-        X = np.asarray(X, dtype=np.float64)
-        z1 = np.dot(X, self.W1) + self.b1
-        a1 = sigmoid(z1)
-        z2 = np.dot(a1, self.W2) + self.b2
-        return softmax(z2)
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """Predicts class labels for test samples X."""
-        probs = self.predict_proba(X)
-        pred_indices = np.argmax(probs, axis=1)
-        return self.classes_[pred_indices]
+    return best_class
 
 
 # =============================================================================
-# Paper 2: Modified Adaptive Backpropagation Network (MABPN)
-# Poornima Devi & Sornam (2020)
+# 4. MODIFIED ADAPTIVE BACKPROPAGATION NETWORK (MABPN) CLASS
 # =============================================================================
 
 class ModifiedAdaptiveBackpropNN(BaseEstimator, ClassifierMixin):
     """
-    Modified Adaptive Backpropagation Network (MABPN).
-    Reference: Poornima Devi & Sornam (2020), ACM TALLIP.
+    Modified Adaptive Backpropagation Network (MABPN) Classifier.
+    Reference: Poornima Devi & Sornam (2020), ACM TALLIP, Article 82.
     
-    Key Modifications over standard BPNN:
-      1. Nguyen-Widrow Weight Initialization (avoids saturation, speeds convergence)
-      2. Shannon Activation Function: f(x) = sin(x) - sin(sin(x))
-      3. Adaptive Learning Rate updates:
-         - If loss decreases: eta = eta * lr_inc (accelerates convergence)
-         - If loss increases above threshold: eta = eta * lr_dec (prevents divergent oscillation)
+    Implements Equations (9)-(20):
+      - Input-to-hidden: Sigmoid activation
+      - Hidden-to-output: Shannon wavelet activation
+      - Error calculation: Linear errors (e2) + Non-linear errors (e1)
+      - Weight updates: Combined gradient update using error scaling terms (mu, lambda).
     """
 
     def __init__(
         self,
-        hidden_layer_sizes: Tuple[int, ...] = (64,),
-        initial_learning_rate: float = 0.05,
-        lr_inc: float = 1.05,
-        lr_dec: float = 0.70,
-        max_error_ratio: float = 1.04,
-        momentum: float = 0.85,
-        activation: str = "shannon",  # 'shannon' or 'hybrid'
-        max_iter: int = 400,
-        tol: float = 1e-4,
-        random_state: int = 42
+        n_inputs: int = 6,
+        n_hidden: int = 20,
+        n_outputs: int = 5,
+        learning_rate: float = 0.05,
+        max_iter: int = 200,
+        tol: float = config.CONVERGENCE_ERROR_TARGET,
+        random_state: int = config.RANDOM_SEED
     ):
-        self.hidden_layer_sizes = hidden_layer_sizes
-        self.initial_learning_rate = initial_learning_rate
-        self.lr_inc = lr_inc
-        self.lr_dec = lr_dec
-        self.max_error_ratio = max_error_ratio
-        self.momentum = momentum
-        self.activation = activation
+        self.n_inputs = n_inputs
+        self.n_hidden = n_hidden
+        self.n_outputs = n_outputs
+        self.learning_rate = learning_rate
         self.max_iter = max_iter
         self.tol = tol
         self.random_state = random_state
 
-        # Internal state
-        self.W1: Optional[np.ndarray] = None
-        self.b1: Optional[np.ndarray] = None
-        self.W2: Optional[np.ndarray] = None
-        self.b2: Optional[np.ndarray] = None
-        self.label_binarizer: Optional[LabelBinarizer] = None
+        # Network weights and biases
+        self.W: Optional[np.ndarray] = None   # Input-to-hidden weights (n_inputs x n_hidden)
+        self.bh: Optional[np.ndarray] = None  # Hidden layer biases (1 x n_hidden)
+        self.V: Optional[np.ndarray] = None   # Hidden-to-output weights (n_hidden x n_outputs)
+        self.bo: Optional[np.ndarray] = None  # Output layer biases (1 x n_outputs)
+
+        # Classes and history tracking
         self.classes_: Optional[np.ndarray] = None
         self.loss_history_: List[float] = []
-        self.lr_history_: List[float] = []
+
+    def _init_weights(self):
+        """Initializes weights using Nguyen-Widrow technique (Equations 1-6)."""
+        rng = np.random.default_rng(self.random_state)
+        # Input to hidden (Equations 1-3)
+        self.W, self.bh = initialize_nguyen_widrow(self.n_inputs, self.n_hidden, rng)
+        # Hidden to output (Equations 4-6)
+        self.V, self.bo = initialize_nguyen_widrow(self.n_hidden, self.n_outputs, rng)
+
+    def _forward(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Forward pass for a single input vector x (shape: 1 x n_inputs):
+          uh = x * W + bh
+          ah = sigmoid(uh) (Equation 7)
+          uo = ah * V + bo
+          d  = shannon_wavelet_activation(uo) (Equation 8)
+        """
+        uh = np.dot(x, self.W) + self.bh
+        ah = sigmoid(uh)
+        uo = np.dot(ah, self.V) + self.bo
+        d = shannon_wavelet_activation(uo)
+        return uh, ah, uo, d
 
     def fit(self, X: np.ndarray, y: np.ndarray):
-        """Trains the MABPN using Nguyen-Widrow init, Shannon activation, and adaptive learning rate."""
-        rng = np.random.default_rng(self.random_state)
+        """
+        Trains MABPN on training set (X, y) using Equations (9)-(20).
+        """
         X = np.asarray(X, dtype=np.float64)
-        n_samples, n_features = X.shape
+        n_samples, n_feat = X.shape
+        self.n_inputs = n_feat
 
-        # Encode labels
-        self.label_binarizer = LabelBinarizer()
-        Y_onehot = self.label_binarizer.fit_transform(y)
-        if Y_onehot.shape[1] == 1:
-            Y_onehot = np.hstack([1.0 - Y_onehot, Y_onehot])
-        self.classes_ = self.label_binarizer.classes_
-        n_classes = Y_onehot.shape[1]
+        # Map labels to 1-based class indices for Figure 12 5-bit encoding
+        unique_labels = np.unique(y)
+        self.classes_ = unique_labels
+        label_to_idx = {label: i + 1 for i, label in enumerate(unique_labels)}
 
-        n_hidden = self.hidden_layer_sizes[0]
+        # Encode target outputs into 5-bit vectors (Figure 12)
+        Y_5bit = np.zeros((n_samples, self.n_outputs), dtype=np.float64)
+        for i in range(n_samples):
+            cls_1based = label_to_idx[y[i]]
+            Y_5bit[i] = encode_class_to_5bit(cls_1based)
 
-        # 1. Nguyen-Widrow Weight Initialization (Paper 2)
-        self.W1, self.b1 = initialize_nguyen_widrow(n_features, n_hidden, rng)
-        self.W2, self.b2 = initialize_nguyen_widrow(n_hidden, n_classes, rng)
-
-        # Velocity terms for momentum
-        v_W1 = np.zeros_like(self.W1)
-        v_b1 = np.zeros_like(self.b1)
-        v_W2 = np.zeros_like(self.W2)
-        v_b2 = np.zeros_like(self.b2)
-
-        current_lr = self.initial_learning_rate
-        prev_loss = np.inf
+        # Initialize network weights with Nguyen-Widrow
+        self._init_weights()
         self.loss_history_ = []
-        self.lr_history_ = []
+
+        alpha = self.learning_rate
 
         for epoch in range(self.max_iter):
-            # 2. Forward Propagation with Shannon Activation
-            z1 = np.dot(X, self.W1) + self.b1
-            if self.activation == "shannon":
-                a1 = shannon_activation(z1)
-            else:
-                a1 = sigmoid(z1)
+            epoch_error_sq = 0.0
 
-            z2 = np.dot(a1, self.W2) + self.b2
-            a2 = softmax(z2)
+            # Online stochastic / sample-by-sample update matching paper equations (9)-(20)
+            indices = np.arange(n_samples)
 
-            # 3. Loss Calculation (Cross-Entropy)
-            probs_clip = np.clip(a2, 1e-12, 1.0 - 1e-12)
-            loss = -np.mean(np.sum(Y_onehot * np.log(probs_clip), axis=1))
+            for idx in indices:
+                x_i = X[idx:idx + 1]       # shape: (1, n_inputs)
+                y_i = Y_5bit[idx:idx + 1]  # shape: (1, n_outputs)
 
-            self.loss_history_.append(float(loss))
-            self.lr_history_.append(float(current_lr))
+                # 1. Forward Propagation
+                uh, ah, uo, d = self._forward(x_i)
 
-            # Early stopping check
-            if loss < self.tol:
+                # 2. Output Layer Errors (Equations 14-18)
+                # Non-linear error (Eq 14): e1i = yi - di
+                e1_o = y_i - d
+
+                # Linear error (Eq 15): e2i = lyi - ui, where lyi = f^{-1}(yi)
+                ly_i = inverse_shannon_target(y_i)
+                e2_o = ly_i - uo
+
+                # Activation derivative at output layer: f'(uo)
+                f_prime_uo = shannon_wavelet_derivative(uo)
+
+                # Output delta terms (Eq 16 & 17)
+                delta_o1 = e1_o * f_prime_uo
+                delta_o2 = e2_o * f_prime_uo
+
+                # Output total error gradient lambda (Eq 18)
+                # delta_o_tot = (delta_o1 + delta_o2) / n
+                delta_o_tot = (delta_o1 + delta_o2)
+                lambda_grad = np.mean(delta_o_tot)
+
+                # 3. Hidden Layer Errors (Equations 9-13)
+                # e1j = sum_r f'(ur) * e1r * wrj (Eq 9, where wrj are hidden-to-output weights V)
+                e1_h = np.dot(e1_o * f_prime_uo, self.V.T)
+
+                # Sigmoid activation gradient at hidden layer: f'(uh)
+                f_prime_uh = sigmoid_derivative(ah)
+
+                # e2j = f'(uj) * sum_r e2r * wrj (Eq 10)
+                e2_h = f_prime_uh * np.dot(e2_o, self.V.T)
+
+                # Hidden delta terms (Eq 11 & 12)
+                delta_h1 = e1_h * f_prime_uh
+                delta_h2 = e2_h * f_prime_uh
+
+                # Hidden total error gradient mu (Eq 13)
+                delta_h_tot = delta_h1 + delta_h2
+                mu_grad = np.mean(delta_h_tot)
+
+                # 4. Weight Updates (Equations 19 & 20)
+                # Delta V for hidden-to-output weights:
+                # Delta V_jk = lambda * e1k * f'(uk) * ah_j + lambda * alpha * e2k * ah_j
+                grad_V_nonlinear = np.dot(ah.T, e1_o * f_prime_uo)
+                grad_V_linear = np.dot(ah.T, e2_o)
+                delta_V = lambda_grad * grad_V_nonlinear + lambda_grad * alpha * grad_V_linear
+                delta_bo = lambda_grad * (e1_o * f_prime_uo) + lambda_grad * alpha * e2_o
+
+                # Delta W for input-to-hidden weights:
+                # Delta W_ij = mu * e1j * f'(uj) * x_i + mu * alpha * e2j * x_i
+                grad_W_nonlinear = np.dot(x_i.T, e1_h * f_prime_uh)
+                grad_W_linear = np.dot(x_i.T, e2_h)
+                delta_W = mu_grad * grad_W_nonlinear + mu_grad * alpha * grad_W_linear
+                delta_bh = mu_grad * (e1_h * f_prime_uh) + mu_grad * alpha * e2_h
+
+                # Update weights
+                self.V += delta_V
+                self.bo += delta_bo
+                self.W += delta_W
+                self.bh += delta_bh
+
+                # Track error
+                epoch_error_sq += np.sum(e1_o ** 2)
+
+            mse = float(epoch_error_sq / (n_samples * self.n_outputs))
+            self.loss_history_.append(mse)
+
+            # Stopping condition from Figure 9: check error < 0.0001
+            if mse < self.tol:
                 break
-
-            # 4. Adaptive Learning Rate Adjustment (Paper 2)
-            if epoch > 0:
-                if loss < prev_loss:
-                    # Loss decreased: Increase learning rate slightly for faster descent
-                    current_lr = min(current_lr * self.lr_inc, 1.0)
-                elif loss > prev_loss * self.max_error_ratio:
-                    # Loss spiked significantly: Reduce learning rate and dampen momentum
-                    current_lr = max(current_lr * self.lr_dec, 1e-4)
-                    v_W1 *= 0.5
-                    v_W2 *= 0.5
-
-            prev_loss = loss
-
-            # 5. Backpropagation
-            delta2 = (a2 - Y_onehot) / n_samples
-            grad_W2 = np.dot(a1.T, delta2)
-            grad_b2 = np.sum(delta2, axis=0, keepdims=True)
-
-            if self.activation == "shannon":
-                act_deriv1 = shannon_derivative(z1)
-            else:
-                act_deriv1 = sigmoid_derivative(a1)
-
-            delta1 = np.dot(delta2, self.W2.T) * act_deriv1
-            grad_W1 = np.dot(X.T, delta1)
-            grad_b1 = np.sum(delta1, axis=0, keepdims=True)
-
-            # 6. Weight Updates with Adaptive Learning Rate and Momentum
-            v_W2 = self.momentum * v_W2 - current_lr * grad_W2
-            v_b2 = self.momentum * v_b2 - current_lr * grad_b2
-            v_W1 = self.momentum * v_W1 - current_lr * grad_W1
-            v_b1 = self.momentum * v_b1 - current_lr * grad_b1
-
-            self.W2 += v_W2
-            self.b2 += v_b2
-            self.W1 += v_W1
-            self.b1 += v_b1
 
         return self
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Returns class probabilities for test samples X."""
+    def predict_bits(self, X: np.ndarray) -> np.ndarray:
+        """Computes continuous 5-bit output predictions for input X."""
         X = np.asarray(X, dtype=np.float64)
-        z1 = np.dot(X, self.W1) + self.b1
-        if self.activation == "shannon":
-            a1 = shannon_activation(z1)
-        else:
-            a1 = sigmoid(z1)
-        z2 = np.dot(a1, self.W2) + self.b2
-        return softmax(z2)
+        uh = np.dot(X, self.W) + self.bh
+        ah = sigmoid(uh)
+        uo = np.dot(ah, self.V) + self.bo
+        return shannon_wavelet_activation(uo)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Predicts class labels for test samples X."""
-        probs = self.predict_proba(X)
-        pred_indices = np.argmax(probs, axis=1)
-        return self.classes_[pred_indices]
+        """
+        Predicts class labels for test samples X using nearest-codeword decoding.
+        """
+        pred_bits = self.predict_bits(X)
+        predictions = []
+
+        for row in pred_bits:
+            pred_class_1based = decode_5bit_to_class(row)
+            # Map back to original label
+            if pred_class_1based <= len(self.classes_):
+                label = self.classes_[pred_class_1based - 1]
+            else:
+                label = self.classes_[-1]
+            predictions.append(label)
+
+        return np.array(predictions)
+
+
+# =============================================================================
+# 5. SPECIFIC PAPER PROPOSED MODELS 1 & 2
+# =============================================================================
+
+class MABPN_BCV(ModifiedAdaptiveBackpropNN):
+    """
+    Model 1: MABPN with Binary Coded Value (BCV) input (Section 3.1.2).
+    Architecture:
+      - 65 input neurons (64 binary pixels + 1 bias)
+      - 55 hidden neurons
+      - 5 output neurons (5-bit class encoding)
+    """
+    def __init__(
+        self,
+        learning_rate: float = 0.05,
+        max_iter: int = 150,
+        tol: float = config.CONVERGENCE_ERROR_TARGET,
+        random_state: int = config.RANDOM_SEED
+    ):
+        super().__init__(
+            n_inputs=config.BCV_INPUT_DIM,       # 64
+            n_hidden=config.BCV_HIDDEN_NEURONS,  # 55
+            n_outputs=config.BCV_OUTPUT_NEURONS, # 5
+            learning_rate=learning_rate,
+            max_iter=max_iter,
+            tol=tol,
+            random_state=random_state
+        )
+
+
+class MABPN_GLCM(ModifiedAdaptiveBackpropNN):
+    """
+    Model 2: MABPN with GLCM feature extraction input (Section 3.1.3).
+    Architecture:
+      - 6 input neurons (Contrast, Energy, Homogeneity, Correlation, Dissimilarity, ASM) + 1 bias
+      - 20 hidden neurons
+      - 5 output neurons (5-bit class encoding)
+    """
+    def __init__(
+        self,
+        learning_rate: float = 0.05,
+        max_iter: int = 120,
+        tol: float = config.CONVERGENCE_ERROR_TARGET,
+        random_state: int = config.RANDOM_SEED
+    ):
+        super().__init__(
+            n_inputs=config.GLCM_INPUT_DIM,       # 6
+            n_hidden=config.GLCM_HIDDEN_NEURONS,  # 20
+            n_outputs=config.GLCM_OUTPUT_NEURONS, # 5
+            learning_rate=learning_rate,
+            max_iter=max_iter,
+            tol=tol,
+            random_state=random_state
+        )
