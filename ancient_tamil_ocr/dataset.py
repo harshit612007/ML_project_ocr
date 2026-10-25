@@ -1,6 +1,19 @@
 """
 Dataset Loader and Ancient Tamil Palm-Leaf Manuscript Generator.
 Domain: Ancient Tamil Palm-Leaf Manuscripts (தமிழ் பனையோலை சுவடிகள் - Panaiyolai Suvadigal).
+
+Dataset Context & Origins:
+  1. Reference Paper Archival Dataset (Poornima Devi & Sornam, 2020):
+     - Origin: Physical palm-leaf manuscripts preserved at U.V. Swaminatha Iyer Library, Chennai, India.
+     - Size: 1,756 ancient Tamil handwritten character samples across 18 consonant classes (Figure 12).
+     - Availability: Physical institutional archive (closed library collection; no public download URL).
+  2. Local Benchmark / Demonstration Dataset:
+     - Size: 500 character samples across 10 representative ancient Tamil classes (50 samples/class).
+     - Physics: In-situ simulation of Palmyra (Borassus flabellifer) palm-leaf grain, organic aging patina,
+       scribe stylus incised groove variations, soot/lampblack ink fading, and micro-crack decay.
+     - Purpose: Enables fully reproducible pipeline testing, unit testing, and comparative benchmarking
+       between MABPN (Paper 2), FFBNN (Paper 1), and classical ML baselines.
+
 Expects: data/<class_name>/*.png|jpg
 Provides automatic fallback and generation of authentic degraded palm-leaf ancient Tamil samples.
 """

@@ -49,17 +49,19 @@ def print_banner():
     banner = r"""
 =============================================================================
    ANCIENT TAMIL (PALM-LEAF MANUSCRIPT) CHARACTER RECOGNITION
-   Classical Machine Learning Pipeline (SIFT + Gabor + PCA + MLP / SVM)
-   Domain: Panaiyolai Suvadigal (பனையோலை சுவடிகள்)
-   Strictly Classical ML & Shallow Neural Networks (NO Deep Learning)
+   Primary Research Model: Modified Adaptive Backpropagation NN (MABPN)
+   Paper 2: Poornima Devi & Sornam (2020), ACM TALLIP (Shannon Wavelet + GLCM)
+   Paper 1 (Adapted): Ramya & Parvathavarthini (2014) FFBNN Architecture
+   Comparative Benchmarks: Classical Machine Learning (SVM, RF, k-NN, MLP)
+   Domain: Panaiyolai Suvadigal (பனையோலை சுவடிகள்) - U.V. Swaminatha Library
 =============================================================================
 """
     print(banner)
 
 
 def run_pipeline(
-    feature_set: str = "gabor_sift",
-    selected_classifier: str = "SVM-Poly",
+    feature_set: str = "glcm",
+    selected_classifier: str = "MABPN (Paper 2: 2020)",
     run_all_benchmarks: bool = True,
     run_ablation: bool = True,
     tune_params: bool = False,
@@ -143,35 +145,41 @@ def run_pipeline(
     # STAGE 5: STRATIFIED 10-FOLD CROSS-VALIDATION
     # -------------------------------------------------------------
     print(f"\n[STAGE 5/7] Running Stratified {cv_folds}-Fold Cross-Validation on Training Data...")
+    print("  -> Cross-validation leakage strictly eliminated: PCA is fitted exclusively within each fold.")
     all_classifiers = models.get_classifiers(random_state=config.RANDOM_SEED)
 
     if selected_classifier not in all_classifiers and selected_classifier != "all":
-        print(f"  [WARNING] Classifier '{selected_classifier}' not found. Defaulting to 'SVM-Poly'.")
-        selected_classifier = "SVM-Poly"
+        print(f"  [WARNING] Classifier '{selected_classifier}' not found. Defaulting to 'MABPN (Paper 2: 2020)'.")
+        selected_classifier = "MABPN (Paper 2: 2020)"
 
-    primary_clf = all_classifiers["SVM-Poly"] if selected_classifier == "all" else all_classifiers[selected_classifier]
+    primary_clf = all_classifiers["MABPN (Paper 2: 2020)"] if selected_classifier == "all" else all_classifiers[selected_classifier]
 
     if tune_params:
         print(f"  -> Tuning hyperparameters via GridSearchCV for '{selected_classifier}'...")
         primary_clf, best_params = models.tune_hyperparameters(
-            selected_classifier,
+            selected_classifier if selected_classifier != "all" else "MABPN (Paper 2: 2020)",
             primary_clf,
-            X_train_final,
-            y_train
+            X_train_feat,
+            y_train,
+            use_pca=use_pca,
+            pca_ratio=pca_ratio
         )
         print(f"  -> Best Hyperparameters: {best_params}")
 
     cv_results = models.run_tenfold_cross_validation(
         primary_clf,
-        X_train_final,
+        X_train_feat,
         y_train,
+        use_pca=use_pca,
+        pca_ratio=pca_ratio,
         cv_folds=cv_folds,
         random_state=config.RANDOM_SEED
     )
 
-    print(f"  -> Model: {selected_classifier if selected_classifier != 'all' else 'SVM-Poly'}")
+    print(f"  -> Primary Demonstration Model: {selected_classifier if selected_classifier != 'all' else 'MABPN (Paper 2: 2020)'}")
     print(f"  -> 10-Fold CV Mean Accuracy: {cv_results['mean_accuracy']*100:.2f}% (+/- {cv_results['std_accuracy']*100:.2f}%)")
     print(f"  -> 10-Fold CV Mean Macro F1: {cv_results['mean_f1']*100:.2f}% (+/- {cv_results['std_f1']*100:.2f}%)")
+
 
     # -------------------------------------------------------------
     # STAGE 6: HELD-OUT TEST SET EVALUATION
@@ -222,8 +230,18 @@ def run_pipeline(
         print("\n[STAGE 7A] Benchmarking Feature Set x Classifier Matrix...")
         test_clfs = models.get_classifiers(random_state=config.RANDOM_SEED)
 
-        print("  Extracting base feature sets (Gabor, SIFT, HOG, Statistical)...")
-        # Extract base representations once
+        print("  Extracting feature representations (GLCM, Binary Coded, Gabor, SIFT, HOG, Statistical)...")
+        # Paper 2: 6-feature GLCM texture representation
+        pipe_glcm = features.FeaturePipeline(feature_type="glcm", random_state=config.RANDOM_SEED)
+        X_tr_glcm = pipe_glcm.fit_transform(X_train_prep)
+        X_te_glcm = pipe_glcm.transform(X_test_prep)
+
+        # Paper 1: 64-feature binary coded values
+        pipe_bcv = features.FeaturePipeline(feature_type="binary_coded", random_state=config.RANDOM_SEED)
+        X_tr_bcv = pipe_bcv.fit_transform(X_train_prep)
+        X_te_bcv = pipe_bcv.transform(X_test_prep)
+
+        # Classical comparative feature sets
         pipe_gabor = features.FeaturePipeline(feature_type="gabor", random_state=config.RANDOM_SEED)
         X_tr_gabor = pipe_gabor.fit_transform(X_train_prep)
         X_te_gabor = pipe_gabor.transform(X_test_prep)
@@ -241,14 +259,16 @@ def run_pipeline(
         X_te_stat = pipe_stat.transform(X_test_prep)
 
         feature_dict = {
+            "GLCM (Paper 2)": (X_tr_glcm, X_te_glcm),
+            "BINARY_CODED (Paper 1)": (X_tr_bcv, X_te_bcv),
             "GABOR": (X_tr_gabor, X_te_gabor),
             "SIFT": (X_tr_sift, X_te_sift),
             "GABOR_SIFT": (np.hstack([X_tr_gabor, X_tr_sift]), np.hstack([X_te_gabor, X_te_sift])),
             "HOG": (X_tr_hog, X_te_hog),
             "STATISTICAL": (X_tr_stat, X_te_stat),
             "ALL": (
-                np.hstack([X_tr_gabor, X_tr_sift, X_tr_hog, X_tr_stat]),
-                np.hstack([X_te_gabor, X_te_sift, X_te_hog, X_te_stat])
+                np.hstack([X_tr_glcm, X_tr_gabor, X_tr_sift, X_tr_hog, X_tr_stat]),
+                np.hstack([X_te_glcm, X_te_gabor, X_te_sift, X_te_hog, X_te_stat])
             ),
         }
 
@@ -257,10 +277,14 @@ def run_pipeline(
         for f_name, (X_tr_f, X_te_f) in feature_dict.items():
             print(f"  Evaluating feature extractor: '{f_name}' (Raw Dim: {X_tr_f.shape[1]})...")
 
-            # Apply PCA
-            pca_bench = PCA(n_components=config.PCA_VARIANCE_RATIO, random_state=config.RANDOM_SEED)
-            X_tr_f_pca = pca_bench.fit_transform(X_tr_f)
-            X_te_f_pca = pca_bench.transform(X_te_f)
+            # Apply PCA if dimension warrants reduction (> 6)
+            if X_tr_f.shape[1] > 6:
+                pca_bench = PCA(n_components=config.PCA_VARIANCE_RATIO, random_state=config.RANDOM_SEED)
+                X_tr_f_pca = pca_bench.fit_transform(X_tr_f)
+                X_te_f_pca = pca_bench.transform(X_te_f)
+            else:
+                X_tr_f_pca = X_tr_f
+                X_te_f_pca = X_te_f
 
             for c_name, clf_obj in test_clfs.items():
                 from sklearn.base import clone
@@ -321,26 +345,27 @@ def main():
         "--paper",
         type=int,
         choices=[1, 2],
-        default=None,
-        help="Quick configuration for reference papers: 1 = Ramya & Parvathavarthini (FFBNN + Binary), 2 = Poornima Devi & Sornam (MABPN + GLCM)"
+        default=2,
+        help="Reference paper configuration: 1 = Ramya & Parvathavarthini (Adapted FFBNN + Binary), 2 = Poornima Devi & Sornam (MABPN + GLCM) [Default: 2]"
     )
     parser.add_argument(
         "--feature-set",
         type=str,
-        default="gabor_sift",
-        choices=["gabor", "sift", "gabor_sift", "hog", "statistical", "glcm", "binary_coded", "all"],
-        help="Feature extraction technique"
+        default="glcm",
+        choices=["glcm", "binary_coded", "gabor", "sift", "gabor_sift", "hog", "statistical", "all"],
+        help="Feature extraction technique (Default: 'glcm' for Paper 2)"
     )
     parser.add_argument(
         "--classifier",
         type=str,
-        default="SVM-Poly",
+        default="MABPN (Paper 2: 2020)",
         choices=[
+            "MABPN (Paper 2: 2020)", "FFBNN (Paper 1: 2014)",
+            "MABPN", "FFBNN", "MABPN (Paper 2)", "FFBNN (Paper 1)",
             "SVM-Poly", "SVM-RBF", "SVM-Linear", "k-NN", "Random Forest",
-            "MLP (Shallow NN)", "MLP", "MLP-2Layer",
-            "FFBNN", "FFBNN (Paper 1)", "MABPN", "MABPN (Paper 2)", "all"
+            "MLP (Shallow NN)", "MLP", "MLP-2Layer", "all"
         ],
-        help="Classifier model (Default: SVM-Poly; supports FFBNN, MABPN, MLP, Random Forest, k-NN)"
+        help="Classifier model (Default: 'MABPN (Paper 2: 2020)'; supports FFBNN, SVM, Random Forest, k-NN, all)"
     )
     parser.add_argument("--no-pca", action="store_true", help="Disable PCA dimensionality reduction")
     parser.add_argument("--no-ablation", action="store_true", help="Skip ablation study")
@@ -352,20 +377,20 @@ def main():
     # Handle --paper shortcuts
     if args.paper == 1:
         feature_set = "binary_coded"
-        chosen_clf = "FFBNN (Paper 1)"
-        print("\n>>> CONFIGURED FOR PAPER 1: Ramya & Parvathavarthini (2014) - FFBNN + Binary Coded Features <<<\n")
+        chosen_clf = "FFBNN (Paper 1: 2014)"
+        print("\n>>> CONFIGURED FOR PAPER 1: Ramya & Parvathavarthini (2014) - Adapted FFBNN + Binary Coded Features <<<\n")
     elif args.paper == 2:
         feature_set = "glcm"
-        chosen_clf = "MABPN (Paper 2)"
-        print("\n>>> CONFIGURED FOR PAPER 2: Poornima Devi & Sornam (2020) - MABPN + GLCM Texture Features <<<\n")
+        chosen_clf = "MABPN (Paper 2: 2020)"
+        print("\n>>> CONFIGURED FOR PAPER 2: Poornima Devi & Sornam (2020) - MABPN + 6-Feature GLCM Texture <<<\n")
     else:
         feature_set = args.feature_set
-        if args.classifier == "MLP":
+        if args.classifier in ("MLP", "MLP (Shallow NN)"):
             chosen_clf = "MLP (Shallow NN)"
-        elif args.classifier == "FFBNN":
-            chosen_clf = "FFBNN (Paper 1)"
-        elif args.classifier == "MABPN":
-            chosen_clf = "MABPN (Paper 2)"
+        elif args.classifier in ("FFBNN", "FFBNN (Paper 1)", "FFBNN (Paper 1: 2014)"):
+            chosen_clf = "FFBNN (Paper 1: 2014)"
+        elif args.classifier in ("MABPN", "MABPN (Paper 2)", "MABPN (Paper 2: 2020)"):
+            chosen_clf = "MABPN (Paper 2: 2020)"
         else:
             chosen_clf = args.classifier
 
@@ -378,6 +403,7 @@ def main():
         cv_folds=args.cv_folds,
         use_pca=not args.no_pca
     )
+
 
 
 if __name__ == "__main__":

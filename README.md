@@ -330,37 +330,55 @@ $$\frac{\sum_{i=1}^k \lambda_i}{\sum_{j=1}^D \lambda_j} \ge 0.95$$
 
 ---
 
-### 4.4 Stage 4: Classification Models
+### 4.4 Stage 4: Classification Models & Neural Network Architectures
 
-#### 1. Classical Shallow Neural Network (MLP)
-- **Architecture:** Input layer ($\mathbb{R}^{69}$) $\rightarrow$ 1 Hidden Layer of 128 units with $\text{ReLU}$ activation $\rightarrow$ Softmax Output Layer (10 Tamil classes).
-- **Activation Function:**
-  $$f(z) = \max(0, z)$$
-- **Objective Function:** Cross-Entropy loss with $L_2$ weight regularization:
-  $$\mathcal{L}(\mathbf{W}) = -\frac{1}{N}\sum_{i=1}^N \sum_{c=1}^C y_{ic} \log \hat{y}_{ic} + \frac{\alpha}{2}\sum \|\mathbf{W}\|^2, \quad \alpha=0.001$$
-- **Optimization:** **L-BFGS (Limited-memory Quasi-Newton method)**, which approximates the inverse Hessian matrix $\mathbf{H}^{-1}$ using past curvature updates, converging rapidly on CPU.
+Neural networks are the primary demonstration of this project, featuring faithful implementations of the reference research models, benchmarked alongside classical machine learning algorithms:
 
-#### 2. Classical 2-Layer Neural Network (MLP-2Layer)
-- **Architecture:** Input ($\mathbb{R}^{69}$) $\rightarrow$ Hidden 1 (128 units, $\text{ReLU}$) $\rightarrow$ Hidden 2 (64 units, $\text{ReLU}$) $\rightarrow$ Output (10 classes).
+#### 1. Primary Research Model: Modified Adaptive Backpropagation Neural Network (MABPN)
+*Reference: Poornima Devi & Sornam (2020), ACM TALLIP.*
+- **Weight Initialization:** Nguyen-Widrow algorithm (Equations 1–6) setting $\beta = 0.7 \cdot H^{1/D}$, scaling weights to distribute neuron sensitivity evenly over the input hypersphere and prevent saturation.
+- **Hidden Layer Activation:** Sigmoid transfer function (Equation 7):
+  $$g(u) = \frac{1}{1 + e^{-u}}$$
+- **Output Layer Activation:** Shannon Wavelet transfer function (Equation 8):
+  $$f(u) = \frac{\sin(1.75u) - \sin(0.75u)}{1.75u}, \quad \lim_{u \to 0} f(u) = \frac{4}{7} \approx 0.57142857$$
+  Analytical derivative with limit $f'(0) = 0.0$:
+  $$f'(u) = \frac{1.75 \cos(1.75u) - 0.75 \cos(0.75u)}{1.75u} - \frac{\sin(1.75u) - \sin(0.75u)}{1.75u^2}$$
+- **Dual Error Backpropagation:** Propagates both direct linear error $e_1$ and non-linear quadratic error $e_2$ (Equations 14–17):
+  $$e_1 = d - y, \quad e_2 = \frac{1}{2}(d^2 - y^2)$$
+  $$\delta_o = \delta_{o1} + \alpha \delta_{o2} = (e_1 + \alpha e_2) \odot f'(u_o)$$
+- **Adaptive Learning Rate:** Dynamically accelerates $\eta \leftarrow \min(\eta \cdot 1.05, 1.0)$ when error decreases, and dampens $\eta \leftarrow \max(\eta \cdot 0.70, 10^{-4})$ when error spikes.
 
-#### 3. Polynomial Kernel SVM
-$$K(\mathbf{x}_i, \mathbf{x}_j) = (\gamma \mathbf{x}_i^T\mathbf{x}_j + r)^d, \quad d=3, C=1.0, r=1.0, \gamma = \frac{1}{D \cdot \sigma_X^2}$$
+#### 2. Adapted Research Model: Feed Forward Back Propagation Neural Network (FFBNN)
+*Reference: Ramya & Parvathavarthini (2014), Journal of Computer Science.*
+- **Architecture:** Clearly documented as an **adapted implementation** of Ramya & Parvathavarthini (2014). Designed to benchmark both 64-D binary-coded character masks and multi-representation feature spaces (GLCM, Gabor, SIFT, HOG) with sigmoid activations, learning rate $\eta = 0.05$, and momentum $\alpha = 0.85$.
 
-#### 4. Radial Basis Function (RBF) SVM
-$$K(\mathbf{x}_i, \mathbf{x}_j) = \exp\left(-\gamma \|\mathbf{x}_i - \mathbf{x}_j\|^2\right), \quad C=10.0, \gamma = \text{'scale'}$$
-
-#### 5. Linear Support Vector Machine
-$$K(\mathbf{x}_i, \mathbf{x}_j) = \mathbf{x}_i^T\mathbf{x}_j, \quad C=1.0$$
-
-#### 6. Random Forest Classifier
-Ensemble of 100 bootstrap-aggregated decision trees with random feature subsampling ($\sqrt{D}$) and Gini impurity splitting criterion.
-
-#### 7. k-Nearest Neighbors (k-NN)
-Non-parametric classification with $k=5$ and inverse-distance weighted voting.
+#### 3. Comparative Classical Baseline Classifiers
+- **Shallow MLP (L-BFGS):** Single hidden layer (128 units, ReLU) optimized via Limited-memory Broyden-Fletcher-Goldfarb-Shanno Quasi-Newton solver.
+- **2-Layer MLP:** 128 $\rightarrow$ 64 units with ReLU activation and $L_2$ regularization.
+- **Polynomial Kernel SVM:** Degree $d=3$, $C=1.0$, $r=1.0$, $\gamma = \text{'scale'}$.
+- **Radial Basis Function (RBF) SVM:** $C=10.0$, $\gamma = \text{'scale'}$.
+- **Linear SVM:** Fast convex linear hyperplane classifier ($C=1.0$).
+- **Random Forest:** Ensemble of 100 bootstrap decision trees with Gini criterion.
+- **k-Nearest Neighbors (k-NN):** Instance-based voting with $k=5$ and inverse Euclidean distance weights.
 
 ---
 
 ## 5. Dataset & Palmyra Palm-Leaf (Panaiyolai) Degradation
+
+### 5.1 Dataset Delineation: Archival Collection vs. Project Benchmark
+
+To maintain strict scientific and academic clarity, this repository clearly distinguishes between:
+
+1. **The Reference Research Paper Archival Dataset (Poornima Devi & Sornam, 2020):**
+   - **Scale:** 1,756 authentic ancient Tamil handwritten character samples spanning 18 consonant classes (Figure 12: க், ங், ச், ஞ், ட், ண், த், ந், ப், ம், ய், ர், ல், வ், ழ், ள், ற், ன்).
+   - **Repository:** Preserved at the **U.V. Swaminatha Iyer Library**, Chennai, India.
+   - **Availability:** Physical institutional preservation archive (closed physical manuscript collection; no online download URL).
+
+2. **The Project Benchmark & Demonstration Dataset:**
+   - **Scale:** 500 standardized character samples across 10 representative ancient Tamil classes (50 samples per class).
+   - **Authentic Physical Simulation:** Synthesized via a physics-informed degradation model simulating Palmyra (*Borassus flabellifer*) palm-leaf horizontal fibers, organic aging patina, iron stylus incision line variations, soot ink capillary fading, and micro-fractures.
+   - **Purpose:** Enables fully automated, zero-friction reproducibility, continuous integration testing, and fair comparative benchmarking between MABPN (Paper 2), FFBNN (Paper 1), and classical ML models.
+   - **External Compatibility:** Fully compatible with custom external datasets—place character folders into `data/<class_name>/*.png` and the pipeline automatically discovers all classes.
 
 ### Supported Character Classes (10 Ancient Tamil Characters)
 The project benchmarks 10 fundamental ancient Tamil characters with high paleographic significance:

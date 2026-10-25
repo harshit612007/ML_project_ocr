@@ -348,18 +348,19 @@ def extract_glcm_features(
     n_levels: int = 16
 ) -> np.ndarray:
     """
-    Extracts Gray-Level Co-occurrence Matrix (GLCM) texture features.
+    Extracts the six-feature Gray-Level Co-occurrence Matrix (GLCM) representation.
     Reference: Paper 2 (Poornima Devi & Sornam, 2020), ACM TALLIP.
     
-    Computes 4 fundamental Haralick texture properties across multi-distances and multi-orientations:
-      1. Contrast:    sum_{i,j} |i - j|^2 * P(i,j)
-      2. Correlation: sum_{i,j} (i - mu_i)*(j - mu_j)*P(i,j) / (sigma_i * sigma_j)
-      3. Energy:      sum_{i,j} P(i,j)^2
-      4. Homogeneity: sum_{i,j} P(i,j) / (1 + |i - j|^2)
+    Computes the 6 exact Haralick texture properties defined in Equations (21)-(27):
+      1. Contrast (Eq. 21):       sum_{i,j} (i - j)^2 * P(i, j)
+      2. Energy (Eq. 22):         sqrt(sum_{i,j} P(i, j)^2) = sqrt(ASM)
+      3. Homogeneity (Eq. 23):    sum_{i,j} P(i, j) / (1 + (i - j)^2)
+      4. Correlation (Eq. 24):    sum_{i,j} (i - mu_i)*(j - mu_j)*P(i, j) / (sigma_i * sigma_j)
+      5. Dissimilarity (Eq. 26):  sum_{i,j} |i - j| * P(i, j)
+      6. ASM (Eq. 27):            sum_{i,j} P(i, j)^2
       
-    Computed globally and across 2x2 spatial quadrants (zonal GLCM) to encode
-    both macro-texture and localized stroke distribution across the ancient character.
-    Total: 32 global attributes + 32 quadrant attributes = 64 features.
+    Averages each property across directional co-occurrence matrices, returning
+    a compact, rotation-robust 6-dimensional texture descriptor vector in R^6.
     """
     if img.ndim == 3:
         img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -370,52 +371,27 @@ def extract_glcm_features(
     quantized = (img_gray.astype(np.float32) / 256.0 * n_levels).astype(np.uint8)
     quantized = np.clip(quantized, 0, n_levels - 1)
 
-    features = []
+    # Compute GLCM over distances and angles
+    glcm = graycomatrix(
+        quantized,
+        distances=distances,
+        angles=angles,
+        levels=n_levels,
+        symmetric=True,
+        normed=True
+    )
 
-    def _calc_glcm_props(patch: np.ndarray) -> List[float]:
-        glcm = graycomatrix(
-            patch,
-            distances=distances,
-            angles=angles,
-            levels=n_levels,
-            symmetric=True,
-            normed=True
-        )
-        props = []
-        for prop_name in ["contrast", "correlation", "energy", "homogeneity"]:
-            val = graycoprops(glcm, prop_name)  # shape: (len(distances), len(angles))
-            props.extend(val.flatten().tolist())
-        return props
+    # Extract all 6 properties defined in the 2020 research paper
+    # Note: skimage 'energy' is sqrt(ASM) as in Equation 22, and 'ASM' is Equation 27
+    contrast = float(np.mean(graycoprops(glcm, "contrast")))
+    energy = float(np.mean(graycoprops(glcm, "energy")))
+    homogeneity = float(np.mean(graycoprops(glcm, "homogeneity")))
+    correlation = float(np.mean(graycoprops(glcm, "correlation")))
+    dissimilarity = float(np.mean(graycoprops(glcm, "dissimilarity")))
+    asm = float(np.mean(graycoprops(glcm, "ASM")))
 
-    # 1. Global GLCM features (4 props * 2 dists * 4 angles = 32 features)
-    features.extend(_calc_glcm_props(quantized))
+    return np.array([contrast, energy, homogeneity, correlation, dissimilarity, asm], dtype=np.float32)
 
-    # 2. Quadrant Zonal GLCM (2x2 sub-blocks -> mean of props per quadrant = 8 * 4 = 32 features)
-    h, w = quantized.shape
-    mid_h, mid_w = h // 2, w // 2
-    quadrants = [
-        quantized[:mid_h, :mid_w],
-        quantized[:mid_h, mid_w:],
-        quantized[mid_h:, :mid_w],
-        quantized[mid_h:, mid_w:]
-    ]
-
-    for quad in quadrants:
-        glcm_q = graycomatrix(
-            quad,
-            distances=distances,
-            angles=angles,
-            levels=n_levels,
-            symmetric=True,
-            normed=True
-        )
-        for prop_name in ["contrast", "correlation", "energy", "homogeneity"]:
-            val_q = graycoprops(glcm_q, prop_name)
-            # Average across angles for compact quadrant profile (2 values per prop: 1 per distance)
-            mean_dist = np.mean(val_q, axis=1)  # shape: (len(distances),)
-            features.extend(mean_dist.tolist())
-
-    return np.array(features, dtype=np.float32)
 
 
 # =====================================================================

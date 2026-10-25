@@ -16,6 +16,7 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
+from sklearn.decomposition import PCA
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
@@ -28,23 +29,24 @@ from neural_networks import FeedForwardBackpropNN, ModifiedAdaptiveBackpropNN
 
 def get_classifiers(random_state: int = config.RANDOM_SEED) -> Dict[str, Any]:
     """
-    Instantiates the classical machine learning classifiers and neural network architectures.
-    Includes models from both reference research papers:
-      - FFBNN (Paper 1: Ramya & Parvathavarthini, 2014)
-      - MABPN (Paper 2: Poornima Devi & Sornam, 2020)
+    Instantiates the neural network architectures and classical machine learning classifiers.
+    Neural networks are placed first as the primary research architectures:
+      - MABPN (Paper 2: Poornima Devi & Sornam, 2020) - Primary Research Model
+      - FFBNN (Paper 1: Ramya & Parvathavarthini, 2014) - Adapted Research Model
+    followed by classical comparative baseline classifiers (SVM, RF, k-NN, Classical MLP).
     """
     return {
-        "FFBNN (Paper 1)": FeedForwardBackpropNN(
-            hidden_layer_sizes=(64,),
-            learning_rate=0.05,
-            momentum=0.85,
-            max_iter=300,
-            random_state=random_state
-        ),
-        "MABPN (Paper 2)": ModifiedAdaptiveBackpropNN(
+        "MABPN (Paper 2: 2020)": ModifiedAdaptiveBackpropNN(
             hidden_layer_sizes=(64,),
             initial_learning_rate=0.05,
             activation="shannon",
+            max_iter=300,
+            random_state=random_state
+        ),
+        "FFBNN (Paper 1: 2014)": FeedForwardBackpropNN(
+            hidden_layer_sizes=(64,),
+            learning_rate=0.05,
+            momentum=0.85,
             max_iter=300,
             random_state=random_state
         ),
@@ -135,42 +137,74 @@ def tune_hyperparameters(
     base_model: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
+    use_pca: bool = False,
+    pca_ratio: float = config.PCA_VARIANCE_RATIO,
     cv_folds: int = 5,
     random_state: int = config.RANDOM_SEED
 ) -> Tuple[Any, Dict[str, Any]]:
     """
     Performs grid search cross-validation to discover optimal hyperparameters.
+    Eliminates CV leakage: If use_pca is True, PCA is wrapped in an sklearn Pipeline
+    so PCA is fitted strictly on training folds within each cross-validation split.
     """
     grids = get_hyperparameter_grids()
     param_grid = grids.get(model_name, {})
 
     if not param_grid:
+        if use_pca:
+            pca = PCA(n_components=pca_ratio, random_state=random_state)
+            X_train = pca.fit_transform(X_train)
         base_model.fit(X_train, y_train)
         return base_model, {}
 
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
-    grid_search = GridSearchCV(
-        estimator=base_model,
-        param_grid=param_grid,
-        scoring="accuracy",
-        cv=cv,
-        n_jobs=-1,
-        verbose=0
-    )
-    grid_search.fit(X_train, y_train)
-    return grid_search.best_estimator_, grid_search.best_params_
+
+    if use_pca:
+        from sklearn.pipeline import Pipeline
+        pipe = Pipeline([
+            ("pca", PCA(n_components=pca_ratio, random_state=random_state)),
+            ("clf", base_model)
+        ])
+        pipe_param_grid = {f"clf__{k}": v for k, v in param_grid.items()}
+        grid_search = GridSearchCV(
+            estimator=pipe,
+            param_grid=pipe_param_grid,
+            scoring="accuracy",
+            cv=cv,
+            n_jobs=-1,
+            verbose=0
+        )
+        grid_search.fit(X_train, y_train)
+        best_model = grid_search.best_estimator_.named_steps["clf"]
+        best_params = {k.replace("clf__", ""): v for k, v in grid_search.best_params_.items()}
+        return best_model, best_params
+    else:
+        grid_search = GridSearchCV(
+            estimator=base_model,
+            param_grid=param_grid,
+            scoring="accuracy",
+            cv=cv,
+            n_jobs=-1,
+            verbose=0
+        )
+        grid_search.fit(X_train, y_train)
+        return grid_search.best_estimator_, grid_search.best_params_
 
 
 def run_tenfold_cross_validation(
     model: Any,
     X: np.ndarray,
     y: np.ndarray,
+    use_pca: bool = False,
+    pca_ratio: float = config.PCA_VARIANCE_RATIO,
     cv_folds: int = config.CV_FOLDS,
     random_state: int = config.RANDOM_SEED
 ) -> Dict[str, Any]:
     """
-    Executes Stratified 10-Fold Cross-Validation as conducted in Narang et al. (2020).
-    Computes fold-by-fold accuracy, precision, recall, and macro F1 scores.
+    Executes Stratified 10-Fold Cross-Validation.
+    Eliminates cross-validation leakage: When use_pca=True, PCA is fitted strictly
+    on the current fold's training samples (X_tr_fold) and transforms X_val_fold.
+    Validation fold samples never leak into PCA decomposition.
     """
     skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
 
@@ -182,6 +216,12 @@ def run_tenfold_cross_validation(
     for fold_idx, (train_idx, val_idx) in enumerate(skf.split(X, y)):
         X_tr_fold, X_val_fold = X[train_idx], X[val_idx]
         y_tr_fold, y_val_fold = y[train_idx], y[val_idx]
+
+        if use_pca:
+            # Fit PCA strictly on the training fold to eliminate CV data leakage
+            pca_fold = PCA(n_components=pca_ratio, random_state=random_state)
+            X_tr_fold = pca_fold.fit_transform(X_tr_fold)
+            X_val_fold = pca_fold.transform(X_val_fold)
 
         # Fit clone/fresh model instance on current fold
         from sklearn.base import clone
@@ -212,6 +252,7 @@ def run_tenfold_cross_validation(
         "fold_accuracies": [float(x) for x in fold_accuracies],
         "fold_f1s": [float(x) for x in fold_f1s],
     }
+
 
 
 if __name__ == "__main__":

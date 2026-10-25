@@ -57,15 +57,15 @@ def load_or_train_default_pipeline():
     X_tr_raw, _, y_tr, _, class_names, _ = dataset.load_character_dataset(auto_generate_if_missing=True)
     X_tr_prep = preprocess.preprocess_dataset(X_tr_raw)
 
-    feat_pipe = features.FeaturePipeline(feature_type="gabor_sift", random_state=config.RANDOM_SEED)
+    feat_pipe = features.FeaturePipeline(feature_type="glcm", random_state=config.RANDOM_SEED)
     X_tr_feat = feat_pipe.fit_transform(X_tr_prep)
 
     from sklearn.decomposition import PCA
     pca = PCA(n_components=config.PCA_VARIANCE_RATIO, random_state=config.RANDOM_SEED)
     X_tr_pca = pca.fit_transform(X_tr_feat)
 
-    # Use winning polynomial SVM
-    clf = models.get_classifiers(random_state=config.RANDOM_SEED)["SVM-Poly"]
+    # Use primary research neural network model MABPN (Paper 2: 2020)
+    clf = models.get_classifiers(random_state=config.RANDOM_SEED)["MABPN (Paper 2: 2020)"]
     clf.fit(X_tr_pca, y_tr)
 
     # Save artifacts
