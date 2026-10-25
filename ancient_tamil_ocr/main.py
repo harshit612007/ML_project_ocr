@@ -316,20 +316,31 @@ def run_pipeline(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ancient Devanagari Character Recognition Pipeline")
+    parser = argparse.ArgumentParser(description="Ancient Tamil Palm-Leaf Character Recognition Pipeline")
+    parser.add_argument(
+        "--paper",
+        type=int,
+        choices=[1, 2],
+        default=None,
+        help="Quick configuration for reference papers: 1 = Ramya & Parvathavarthini (FFBNN + Binary), 2 = Poornima Devi & Sornam (MABPN + GLCM)"
+    )
     parser.add_argument(
         "--feature-set",
         type=str,
         default="gabor_sift",
-        choices=["gabor", "sift", "gabor_sift", "hog", "statistical", "all"],
+        choices=["gabor", "sift", "gabor_sift", "hog", "statistical", "glcm", "binary_coded", "all"],
         help="Feature extraction technique"
     )
     parser.add_argument(
         "--classifier",
         type=str,
         default="SVM-Poly",
-        choices=["SVM-Poly", "SVM-RBF", "SVM-Linear", "k-NN", "Random Forest", "MLP (Shallow NN)", "MLP", "MLP-2Layer", "all"],
-        help="Classifier model (Default: SVM-Poly, paper proposal; also supports MLP, Random Forest, k-NN)"
+        choices=[
+            "SVM-Poly", "SVM-RBF", "SVM-Linear", "k-NN", "Random Forest",
+            "MLP (Shallow NN)", "MLP", "MLP-2Layer",
+            "FFBNN", "FFBNN (Paper 1)", "MABPN", "MABPN (Paper 2)", "all"
+        ],
+        help="Classifier model (Default: SVM-Poly; supports FFBNN, MABPN, MLP, Random Forest, k-NN)"
     )
     parser.add_argument("--no-pca", action="store_true", help="Disable PCA dimensionality reduction")
     parser.add_argument("--no-ablation", action="store_true", help="Skip ablation study")
@@ -338,9 +349,28 @@ def main():
     parser.add_argument("--cv-folds", type=int, default=10, help="Number of cross-validation folds")
     args = parser.parse_args()
 
-    chosen_clf = "MLP (Shallow NN)" if args.classifier == "MLP" else args.classifier
+    # Handle --paper shortcuts
+    if args.paper == 1:
+        feature_set = "binary_coded"
+        chosen_clf = "FFBNN (Paper 1)"
+        print("\n>>> CONFIGURED FOR PAPER 1: Ramya & Parvathavarthini (2014) - FFBNN + Binary Coded Features <<<\n")
+    elif args.paper == 2:
+        feature_set = "glcm"
+        chosen_clf = "MABPN (Paper 2)"
+        print("\n>>> CONFIGURED FOR PAPER 2: Poornima Devi & Sornam (2020) - MABPN + GLCM Texture Features <<<\n")
+    else:
+        feature_set = args.feature_set
+        if args.classifier == "MLP":
+            chosen_clf = "MLP (Shallow NN)"
+        elif args.classifier == "FFBNN":
+            chosen_clf = "FFBNN (Paper 1)"
+        elif args.classifier == "MABPN":
+            chosen_clf = "MABPN (Paper 2)"
+        else:
+            chosen_clf = args.classifier
+
     run_pipeline(
-        feature_set=args.feature_set,
+        feature_set=feature_set,
         selected_classifier=chosen_clf,
         run_all_benchmarks=not args.no_benchmark,
         run_ablation=not args.no_ablation,

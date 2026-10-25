@@ -1,5 +1,5 @@
 Condition,Preprocessing,Feature_Extractor,PCA_Applied,Feature_Dim,Accuracy_Pct,Macro_F1_Pct,Train_Time_Sec
-1. Full Proposed (Prep + Gabor/SIFT + PCA),Yes (CLAHE + Sauvola),Gabor + Dense SIFT,Yes (95% Var),70,73.0,73.18,0.053
-"2. Without PCA (Prep + Gabor/SIFT, Full Dim)",Yes (CLAHE + Sauvola),Gabor + Dense SIFT,No (Full Vector),416,73.0,72.79,0.051
-3. Without Preprocessing (Raw Gray + PCA),No (Raw Grayscale),Gabor + Dense SIFT,Yes (95% Var),63,85.0,84.91,5.763
-4. Baseline (Raw Pixels + PCA),Yes (CLAHE + Sauvola),Pixel Intensity (Flattened),Yes (95% Var),276,56.0,56.07,0.223
+1. Full Proposed (Prep + Gabor/SIFT + PCA),Yes (CLAHE + Sauvola),Gabor + Dense SIFT,Yes (95% Var),70,73.0,73.18,0.054
+"2. Without PCA (Prep + Gabor/SIFT, Full Dim)",Yes (CLAHE + Sauvola),Gabor + Dense SIFT,No (Full Vector),416,73.0,72.79,0.053
+3. Without Preprocessing (Raw Gray + PCA),No (Raw Grayscale),Gabor + Dense SIFT,Yes (95% Var),63,85.0,84.91,6.149
+4. Baseline (Raw Pixels + PCA),Yes (CLAHE + Sauvola),Pixel Intensity (Flattened),Yes (95% Var),276,56.0,56.07,0.221

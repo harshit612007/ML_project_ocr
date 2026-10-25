@@ -15,7 +15,7 @@ from typing import Union, List, Tuple, Optional, Dict
 import numpy as np
 import cv2
 from skimage.filters import gabor
-from skimage.feature import hog
+from skimage.feature import hog, graycomatrix, graycoprops
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
 
@@ -315,7 +315,111 @@ def extract_statistical_features(
 
 
 # =====================================================================
-# 5. FEATURE COMBINATIONS & BATCH PIPELINE
+# 5. PAPER 1 & PAPER 2 FEATURE EXTRACTORS: GLCM & BINARY CODED VALUES
+# =====================================================================
+
+def extract_binary_coded_features(
+    img: np.ndarray,
+    grid_size: Tuple[int, int] = (8, 8)
+) -> np.ndarray:
+    """
+    Extracts Binary Coded Values feature representation.
+    Used in Paper 1 (Ramya & Parvathavarthini, 2014) and as baseline in Paper 2 (Poornima Devi & Sornam, 2020).
+    
+    Resamples the binary character mask to a uniform 8x8 spatial grid,
+    yielding a 64-dimensional binary descriptor vector x in {0, 1}^64.
+    """
+    if img.ndim == 3:
+        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    else:
+        img_gray = img
+    
+    # Resample to grid_size
+    resized = cv2.resize(img_gray, grid_size, interpolation=cv2.INTER_AREA)
+    # Threshold to binary 0 or 1
+    binary = (resized > 127).astype(np.float32)
+    return binary.flatten()
+
+
+def extract_glcm_features(
+    img: np.ndarray,
+    distances: List[int] = [1, 2],
+    angles: List[float] = [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4],
+    n_levels: int = 16
+) -> np.ndarray:
+    """
+    Extracts Gray-Level Co-occurrence Matrix (GLCM) texture features.
+    Reference: Paper 2 (Poornima Devi & Sornam, 2020), ACM TALLIP.
+    
+    Computes 4 fundamental Haralick texture properties across multi-distances and multi-orientations:
+      1. Contrast:    sum_{i,j} |i - j|^2 * P(i,j)
+      2. Correlation: sum_{i,j} (i - mu_i)*(j - mu_j)*P(i,j) / (sigma_i * sigma_j)
+      3. Energy:      sum_{i,j} P(i,j)^2
+      4. Homogeneity: sum_{i,j} P(i,j) / (1 + |i - j|^2)
+      
+    Computed globally and across 2x2 spatial quadrants (zonal GLCM) to encode
+    both macro-texture and localized stroke distribution across the ancient character.
+    Total: 32 global attributes + 32 quadrant attributes = 64 features.
+    """
+    if img.ndim == 3:
+        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    else:
+        img_gray = img
+
+    # Quantize image to n_levels (e.g. 16 gray levels) for robust co-occurrence counting
+    quantized = (img_gray.astype(np.float32) / 256.0 * n_levels).astype(np.uint8)
+    quantized = np.clip(quantized, 0, n_levels - 1)
+
+    features = []
+
+    def _calc_glcm_props(patch: np.ndarray) -> List[float]:
+        glcm = graycomatrix(
+            patch,
+            distances=distances,
+            angles=angles,
+            levels=n_levels,
+            symmetric=True,
+            normed=True
+        )
+        props = []
+        for prop_name in ["contrast", "correlation", "energy", "homogeneity"]:
+            val = graycoprops(glcm, prop_name)  # shape: (len(distances), len(angles))
+            props.extend(val.flatten().tolist())
+        return props
+
+    # 1. Global GLCM features (4 props * 2 dists * 4 angles = 32 features)
+    features.extend(_calc_glcm_props(quantized))
+
+    # 2. Quadrant Zonal GLCM (2x2 sub-blocks -> mean of props per quadrant = 8 * 4 = 32 features)
+    h, w = quantized.shape
+    mid_h, mid_w = h // 2, w // 2
+    quadrants = [
+        quantized[:mid_h, :mid_w],
+        quantized[:mid_h, mid_w:],
+        quantized[mid_h:, :mid_w],
+        quantized[mid_h:, mid_w:]
+    ]
+
+    for quad in quadrants:
+        glcm_q = graycomatrix(
+            quad,
+            distances=distances,
+            angles=angles,
+            levels=n_levels,
+            symmetric=True,
+            normed=True
+        )
+        for prop_name in ["contrast", "correlation", "energy", "homogeneity"]:
+            val_q = graycoprops(glcm_q, prop_name)
+            # Average across angles for compact quadrant profile (2 values per prop: 1 per distance)
+            mean_dist = np.mean(val_q, axis=1)  # shape: (len(distances),)
+            features.extend(mean_dist.tolist())
+
+    return np.array(features, dtype=np.float32)
+
+
+# =====================================================================
+# 6. FEATURE COMBINATIONS & BATCH PIPELINE
 # =====================================================================
 
 def extract_single_image_features(
@@ -333,11 +437,21 @@ def extract_single_image_features(
         return extract_hog_features(img)
     elif ft == "statistical":
         return extract_statistical_features(img)
+    elif ft in ("glcm", "paper2_glcm"):
+        # Paper 2: Poornima Devi & Sornam (2020)
+        return extract_glcm_features(img)
+    elif ft in ("binary_coded", "binary", "paper1_binary"):
+        # Paper 1: Ramya & Parvathavarthini (2014) & Paper 2 baseline
+        return extract_binary_coded_features(img)
     elif ft in ("gabor_sift", "sift_gabor"):
         # Narang et al. (2020) proposed combined feature set
         f_gabor = extract_gabor_features(img)
         f_sift = extract_sift_features(img, bovw_model=bovw_model)
         return np.concatenate([f_gabor, f_sift])
+    elif ft in ("glcm_gabor", "gabor_glcm"):
+        f_glcm = extract_glcm_features(img)
+        f_gabor = extract_gabor_features(img)
+        return np.concatenate([f_glcm, f_gabor])
     elif ft in ("statistical_hog", "hog_statistical"):
         f_stat = extract_statistical_features(img)
         f_hog = extract_hog_features(img)
@@ -347,7 +461,8 @@ def extract_single_image_features(
         f_sift = extract_sift_features(img, bovw_model=bovw_model)
         f_hog = extract_hog_features(img)
         f_stat = extract_statistical_features(img)
-        return np.concatenate([f_gabor, f_sift, f_hog, f_stat])
+        f_glcm = extract_glcm_features(img)
+        return np.concatenate([f_gabor, f_sift, f_hog, f_stat, f_glcm])
     else:
         raise ValueError(f"Unknown feature type: {feature_type}")
 

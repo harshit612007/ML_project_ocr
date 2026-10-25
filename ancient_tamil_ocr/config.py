@@ -3,9 +3,10 @@ Configuration settings for Ancient Tamil Palm-Leaf Character Recognition Pipelin
 Domain: Ancient Tamil Palm-Leaf Manuscripts (தமிழ் பனையோலை சுவடிகள் - Panaiyolai Suvadigal).
 Methodology: Classical Machine Learning & Shallow Neural Networks (Strictly NO Deep Learning).
 References:
+  - Paper 1: Ramya & Parvathavarthini (2014), "Feed Forward Back Propagation Neural Network Based Character Recognition System for Tamil Palm Leaf Manuscripts"
+  - Paper 2: Poornima Devi & Sornam (2020), "Classification of Ancient Handwritten Tamil Characters on Palm Leaf Inscription Using Modified Adaptive Backpropagation Neural Network with GLCM Features"
   - Sundaram et al., "Offline Handwritten Tamil Character Recognition on Palm Leaf Manuscripts"
-  - Nirmala & Palanisamy, "Tamil palm leaf character recognition using Gabor features and SVM"
-  - Narang, Jindal & Ahuja (2020), Soft Computing 24(22) (SIFT + Gabor + PCA Pipeline)
+  - Narang, Jindal & Ahuja (2020), Soft Computing 24(22) (SIFT + Gabor + PCA Benchmark Pipeline)
 """
 
 import os

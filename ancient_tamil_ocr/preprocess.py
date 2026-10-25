@@ -290,6 +290,84 @@ def visualize_preprocessing_steps(
     print(f"[INFO] Preprocessing pipeline visualization saved to: {output_path.resolve()}")
 
 
+# =============================================================================
+# CHARACTER SEGMENTATION ALGORITHMS (PAPER 1 & PAPER 2)
+# =============================================================================
+
+def segment_characters_sliding_window(
+    binary_img: np.ndarray,
+    window_size: Tuple[int, int] = (64, 64),
+    step_size: int = 16,
+    min_ink_density: float = 0.05
+) -> List[Tuple[int, int, int, int]]:
+    """
+    Sliding Window Character Segmentation.
+    Reference: Paper 1 (Ramya & Parvathavarthini, 2014), Journal of Computer Science.
+    
+    Slides a fixed-size inspection window across the palm-leaf manuscript line,
+    measuring foreground ink pixel density to isolate individual character frames.
+    
+    Returns:
+      List of bounding boxes (x, y, w, h) for identified character candidates.
+    """
+    h, w = binary_img.shape[:2]
+    win_w, win_h = window_size
+    candidates = []
+
+    # Ensure binary mask has foreground as 255
+    foreground = (binary_img > 127).astype(np.float32)
+
+    for y in range(0, max(1, h - win_h + 1), max(1, win_h // 2)):
+        for x in range(0, max(1, w - win_w + 1), step_size):
+            patch = foreground[y:y + win_h, x:x + win_w]
+            ink_density = float(np.mean(patch))
+            if ink_density >= min_ink_density:
+                candidates.append((x, y, win_w, win_h))
+
+    return candidates
+
+
+def segment_characters_convex_hull(
+    binary_img: np.ndarray,
+    min_dim: int = 14,
+    max_dim: int = 120
+) -> List[Tuple[int, int, int, int]]:
+    """
+    Contour-Based Convex Hull Bounding Box Character Segmentation.
+    Reference: Paper 2 (Poornima Devi & Sornam, 2020), ACM TALLIP.
+    
+    Computes external contours from the restored manuscript, calculates
+    the convex hull for each isolated character contour, and encloses
+    irregular ancient curved glyphs within a tight convex hull bounding box.
+    
+    Returns:
+      List of bounding boxes (x, y, w, h) sorted left-to-right along the leaf.
+    """
+    if binary_img.ndim == 3:
+        binary_mask = cv2.cvtColor(binary_img, cv2.COLOR_RGB2GRAY)
+    else:
+        binary_mask = binary_img
+
+    # Find external contours of ink strokes
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    boxes = []
+    for cnt in contours:
+        if len(cnt) < 3:
+            continue
+        # Compute Convex Hull around the contour (Paper 2)
+        hull = cv2.convexHull(cnt)
+        x, y, w, h = cv2.boundingRect(hull)
+        
+        # Filter out tiny noise specks or excessively large page artifacts
+        if min_dim <= w <= max_dim and min_dim <= h <= max_dim:
+            boxes.append((x, y, w, h))
+
+    # Sort left-to-right along the manuscript strip
+    boxes = sorted(boxes, key=lambda b: (b[0] // 50, b[0]))
+    return boxes
+
+
 if __name__ == "__main__":
     import dataset
     X_tr, _, _, _, class_names, _ = dataset.load_character_dataset()

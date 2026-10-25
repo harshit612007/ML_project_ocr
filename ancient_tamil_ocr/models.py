@@ -23,14 +23,31 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import config
+from neural_networks import FeedForwardBackpropNN, ModifiedAdaptiveBackpropNN
 
 
 def get_classifiers(random_state: int = config.RANDOM_SEED) -> Dict[str, Any]:
     """
-    Instantiates the classical machine learning classifiers.
-    Default parameters chosen based on empirical OCR literature.
+    Instantiates the classical machine learning classifiers and neural network architectures.
+    Includes models from both reference research papers:
+      - FFBNN (Paper 1: Ramya & Parvathavarthini, 2014)
+      - MABPN (Paper 2: Poornima Devi & Sornam, 2020)
     """
     return {
+        "FFBNN (Paper 1)": FeedForwardBackpropNN(
+            hidden_layer_sizes=(64,),
+            learning_rate=0.05,
+            momentum=0.85,
+            max_iter=300,
+            random_state=random_state
+        ),
+        "MABPN (Paper 2)": ModifiedAdaptiveBackpropNN(
+            hidden_layer_sizes=(64,),
+            initial_learning_rate=0.05,
+            activation="shannon",
+            max_iter=300,
+            random_state=random_state
+        ),
         "SVM-Poly": SVC(
             kernel="poly",
             degree=3,

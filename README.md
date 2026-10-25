@@ -10,6 +10,11 @@
 
 ---
 
+> 📖 **COMPREHENSIVE PROJECT EXPLANATION & LEARNING GUIDE:**  
+> For an exhaustive, ground-up technical walkthrough of **Paper 1 (Ramya & Parvathavarthini, 2014)** and **Paper 2 (Poornima Devi & Sornam, 2020)**—including full mathematical derivations with numerical examples, neural network backpropagation, GLCM texture formulas, and file-by-file code explanations—refer to **[`PROJECT_EXPLANATION.md`](PROJECT_EXPLANATION.md)**.
+
+---
+
 ## Executive Summary
 
 This repository houses a complete, reproducible, and mathematically rigorous machine learning framework for the optical recognition of historical **Ancient Tamil characters preserved on degraded Palmyra palm-leaf manuscripts (*Borassus flabellifer* / தமிழ் பனையோலை சுவடிகள் - *Panaiyolai Suvadigal*)**.
@@ -23,12 +28,7 @@ For over two millennia (from the classical Sangam period c. 300 BCE through the 
    - Dried palm leaves possess strong longitudinal grain fibers running horizontally.
    - Drawing sharp horizontal lines (such as the Devanagari *Shirorekha* hanging headbar) would slice through the leaf fibers and crack or split the manuscript along its grain!
    - To protect the leaf from splitting, ancient Tamil scribes deliberately evolved a **curved, rounded, and loop-heavy script** (*Vatteluttu* and classical Tamil script).
-   - This morphology makes Tamil characters uniquely ideal for multi-orientation **Gabor filter banks**, **Dense SIFT keypoint descriptors**, and **Histograms of Oriented Gradients (HOG)**.
-
-### The Research Focus: Neural Networks for Palm-Leaf OCR Without Deep Learning
-A central requirement of this research is evaluating **Classical Artificial Neural Networks (Multi-Layer Perceptrons / MLPs)** on historical palm-leaf manuscripts **strictly without using Deep Learning**. While modern computer vision frequently relies on black-box, computationally intensive Convolutional Neural Networks (CNNs), historical document analysis on resource-constrained platforms requires transparent, mathematically interpretable feature engineering. 
-
-Here, **shallow neural networks** receive explicit, domain-guided physical representations—**Gabor filter banks, Dense SIFT with Bag-of-Visual-Words (BoVW), Histograms of Oriented Gradients (HOG), and statistical zoning**—compressed via **Principal Component Analysis (PCA)**, outperforming raw pixel baselines by over **+34%** while operating entirely within CPU-accessible classical ML constraints.
+   - This morphology makes Tamil characters uniquely ideal for multi-orientation **Gabor filter banks**, **Dense SIFT keypoint descriptors**, and **GLCM texture features**.
 
 ---
 
@@ -44,10 +44,21 @@ cd c:\Users\HARSHIT\Documents\ML\ancient_tamil_ocr
 pip install -r requirements.txt
 ```
 
-### Step 3: Run the Complete Pipeline End-to-End
+### Step 3: Run Paper 1 Pipeline (Ramya & Parvathavarthini: FFBNN + Binary Coded Features)
+```powershell
+python main.py --paper 1
+```
+
+### Step 4: Run Paper 2 Pipeline (Poornima Devi & Sornam: MABPN + GLCM Features)
+```powershell
+python main.py --paper 2
+```
+
+### Step 5: Run the Complete Benchmark Across All Classifiers & Features
 ```powershell
 python main.py
 ```
+*Executes dataset validation, preprocessing, Gabor+SIFT, GLCM, Binary, PCA, 10-fold cross validation, and generates all 300 DPI figures & CSV tables in `results/` in ~35 seconds on standard CPU.*
 *Executes dataset validation, preprocessing, Gabor+SIFT extraction, PCA, 10-fold cross validation, and generates all 300 DPI figures & CSV tables in `results/` in ~34 seconds on standard CPU.*
 
 ### Step 4: Run with Classical Neural Network (Shallow MLP)
@@ -114,7 +125,7 @@ python process_manuscript.py --manuscript manuscripts/cirupancamulam_palm_leaf.j
 An automated audit across all source files confirms **zero references** to deep learning packages or architectures:
 ```powershell
 # Automated codebase verification check:
-Select-String -Path "ancient_tamil_ocr\*.py" -Pattern "torch|tensorflow|keras|conv2d|cuda|cudnn"
+Select-String -Path "*.py" -Pattern "torch|tensorflow|keras|conv2d|cuda|cudnn"
 # Result: ZERO MATCHES FOUND
 ```
 
@@ -451,15 +462,16 @@ ancient_tamil_ocr/
 ├── config.py                           # Central configuration: seeds, paths, Gabor/SIFT/HOG params, PCA threshold
 ├── dataset.py                          # Data loader, 80/20 stratified split, Panaiyolai benchmark synthesizer
 ├── preprocess.py                       # 6-stage palm-leaf restoration pipeline & Sauvola binarization
-├── features.py                         # High-performance Gabor, Dense SIFT, HOG, and Statistical extractors
-├── models.py                           # SVMs (Poly, Linear, RBF), k-NN, Random Forest, Shallow MLPs (1 & 2 layers)
+├── neural_networks.py                  # Custom FFBNN (Paper 1) and MABPN (Paper 2) implementations
+├── features.py                         # GLCM (Paper 2), Binary Coded (Paper 1), Gabor, SIFT, HOG
+├── models.py                           # Classifier registry (FFBNN, MABPN, SVM, RF, MLP) & 10-fold CV
 ├── evaluate.py                         # Metrics, confusion matrix, error analysis, ablation engine
 ├── predict.py                          # Single-image inference CLI with confidence scores & visual prediction card
-├── main.py                             # Master CLI pipeline runner with caching across stages
+├── main.py                             # Master CLI pipeline runner (--paper 1, --paper 2)
 ├── ancient_tamil_recognition.ipynb     # Interactive Jupyter Notebook with rich visualizations
 ├── requirements.txt                    # Pinned classical Python dependencies
-├── README.md                           # Master exhaustive documentation
-├── RESULTS_SUMMARY.md                  # Academic report summary & presentation slide figure guide
+├── README.md                           # Master repository documentation
+├── PROJECT_EXPLANATION.md              # Comprehensive 18-section technical learning guide
 │
 ├── data/                               # 10 Tamil classes (500 samples)
 ├── saved_models/                       # Serialized trained artifacts (.pkl)
@@ -725,13 +737,13 @@ An audit of all files in this repository confirms:
 
 ### 17.2 What CAN Be Pushed Directly to GitHub
 You can push everything in this project directly:
-1. **Source Code (`ancient_tamil_ocr/*.py`):** `config.py`, `dataset.py`, `preprocess.py`, `features.py`, `models.py`, `evaluate.py`, `predict.py`, `main.py`, `process_manuscript.py`.
+1. **Source Code (`*.py`):** `config.py`, `dataset.py`, `preprocess.py`, `features.py`, `neural_networks.py`, `models.py`, `evaluate.py`, `predict.py`, `main.py`, `process_manuscript.py`.
 2. **Interactive Notebook:** `ancient_tamil_recognition.ipynb`.
 3. **Manuscript Scans:** `manuscripts/*.jpg` (all authentic palm leaves are under 1 MB).
 4. **Publication Results & Tables:** `results/*.png`, `results/*.csv`, `results/manuscript_analysis/`.
 5. **Saved Classical Models:** `saved_models/*.pkl` (lightweight scikit-learn models are < 300 KB).
 6. **Dataset:** `data/*/*.png` (500 small 64x64 PNG crops, total ~2.5 MB).
-7. **Documentation:** `README.md`, `RESULTS_SUMMARY.md`, `requirements.txt`, `LICENSE`, `.gitignore`.
+7. **Documentation:** `README.md`, `PROJECT_EXPLANATION.md`, `requirements.txt`, `LICENSE`, `.gitignore`.
 
 ### 17.3 What CANNOT or SHOULD NOT Be Pushed (and How to Share Them)
 The `.gitignore` file automatically excludes:
@@ -752,7 +764,7 @@ If you expand the project in the future with:
 
 ### 17.4 Step-by-Step Commands to Push to GitHub
 
-Run these commands in PowerShell from the project root (`c:\Users\HARSHIT\Documents\ML`):
+Run these commands in PowerShell from the project folder:
 
 ```powershell
 # 1. Initialize git
@@ -778,9 +790,32 @@ git push -u origin main
 
 ## Citation & Reference
 
-If you use this codebase or benchmark methodology in your academic work, please cite:
+If you use this codebase or benchmark methodology in your academic work, please cite the foundational research:
 
 ```bibtex
+@article{ramya2014ffbnn,
+  title={Feed Forward Back Propagation Neural Network Based Character Recognition System for Tamil Palm Leaf Manuscripts},
+  author={Ramya, J. and Parvathavarthini, B.},
+  journal={Journal of Computer Science},
+  volume={10},
+  number={4},
+  pages={660--670},
+  year={2014},
+  doi={10.3844/jcssp.2014.660.670}
+}
+
+@article{poornimadevi2020mabpn,
+  title={Classification of Ancient Handwritten Tamil Characters on Palm Leaf Inscription Using Modified Adaptive Backpropagation Neural Network with GLCM Features},
+  author={Poornima Devi, M. and Sornam, M.},
+  journal={ACM Transactions on Asian and Low-Resource Language Information Processing (TALLIP)},
+  volume={19},
+  number={6},
+  pages={1--14},
+  year={2020},
+  publisher={ACM New York, NY, USA},
+  doi={10.1145/3411756}
+}
+
 @article{sundaram_tamil_palmleaf,
   title={Offline Handwritten Tamil Character Recognition on Palm Leaf Manuscripts using Machine Learning},
   author={Sundaram, S. and Ramakrishnan, A. G.},
@@ -803,10 +838,3 @@ If you use this codebase or benchmark methodology in your academic work, please 
 
 ---
 *Built with strictly classical machine learning principles. No deep learning, no GPUs, 100% reproducible.*
-
----
-
-## 🤝 Contributing
-
-> **Note for Contributors:** If you are a contributor, please create a pull request (PR) rather than pushing directly into the `main` branch. All contributions adhering to the classical machine learning (strictly no deep learning) guidelines are warmly welcomed!
-
